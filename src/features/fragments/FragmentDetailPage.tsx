@@ -1,0 +1,204 @@
+import { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ChevronLeft, Pencil, Trash2, Camera, Video, Mic, Quote } from 'lucide-react';
+import { useFragmentStore } from '../../lib/fragmentStore';
+import { useSpaceStore } from '../../lib/spaceStore';
+import { CaptureSheet, type CaptureDraft } from '../../components/CaptureSheet';
+import { ConfirmSheet } from '../../components/ConfirmSheet';
+import { PhotoViewer } from '../../components/PhotoViewer';
+import { saveMedia, removeMedia } from '../../lib/mediaStore';
+import type { Fragment } from '../../types/fragment';
+
+const ICON = { photo: Camera, video: Video, text: Quote, voice: Mic } as const;
+
+function formatFull(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const h = d.getHours();
+  const min = d.getMinutes();
+  const ampm = h < 12 ? '오전' : '오후';
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  const mm = min.toString().padStart(2, '0');
+  return `${y}년 ${m}월 ${day}일 · ${ampm} ${hh}:${mm}`;
+}
+
+export function FragmentDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const fragments = useFragmentStore((s) => s.fragments);
+  const pendingIds = useFragmentStore((s) => s.pendingIds);
+  const updateFragment = useFragmentStore((s) => s.update);
+  const removeFragment = useFragmentStore((s) => s.remove);
+  const spaces = useSpaceStore((s) => s.spaces);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+
+  const fragment: Fragment | undefined = fragments.find((f) => f.id === id);
+
+  if (!fragment) {
+    return (
+      <div className="stack-4">
+        <DetailHeader onBack={() => navigate(-1)} />
+        <div className="empty">이 결을 찾을 수 없어요.</div>
+      </div>
+    );
+  }
+
+  const Icon = ICON[fragment.type];
+  const pending = pendingIds.has(fragment.id);
+
+  const fragmentSpace = spaces.find((s) => s.id === fragment.spaceId);
+  const showAuthor = !!fragmentSpace && !fragmentSpace.isPersonal;
+  const authorName = fragmentSpace?.members.find((m) => m.userId === fragment.authorId)?.displayName;
+
+  const handleEdit = async (draft: CaptureDraft) => {
+    const patch: Partial<Omit<Fragment, 'id'>> = {
+      type: draft.type,
+      title: draft.title,
+    };
+    if (draft.mediaBlob) {
+      // 새 미디어 → 기존 blob 정리 후 새로 저장
+      if (fragment.hasLocalMedia) await removeMedia(fragment.id);
+      patch.thumbUrl = await saveMedia(fragment.id, draft.mediaBlob);
+      patch.hasLocalMedia = true;
+    } else if (!draft.previewUrl) {
+      // 미디어 제거됨 (다시 선택 후 캔슬 등)
+      if (fragment.hasLocalMedia) await removeMedia(fragment.id);
+      patch.thumbUrl = undefined;
+      patch.hasLocalMedia = false;
+    }
+    // 미디어 그대로 유지 (draft.previewUrl 있고 blob 없음) → thumbUrl 안 건드림
+    updateFragment(fragment.id, patch);
+    setEditOpen(false);
+  };
+
+  const handleDelete = () => {
+    removeFragment(fragment.id);
+    setConfirmOpen(false);
+    navigate(-1);
+  };
+
+  const canViewFull = fragment.type === 'photo' && !!fragment.thumbUrl;
+
+  return (
+    <div className="stack-4">
+      <DetailHeader
+        onBack={() => navigate(-1)}
+        onEdit={() => setEditOpen(true)}
+        onDelete={() => setConfirmOpen(true)}
+      />
+
+      <div
+        className={`detail-media ${canViewFull ? 'detail-media--clickable' : ''}`}
+        onClick={canViewFull ? () => setViewerOpen(true) : undefined}
+        role={canViewFull ? 'button' : undefined}
+        tabIndex={canViewFull ? 0 : -1}
+        aria-label={canViewFull ? '사진 크게 보기' : undefined}
+        onKeyDown={(e) => {
+          if (canViewFull && e.key === 'Enter') setViewerOpen(true);
+        }}
+      >
+        {fragment.thumbUrl ? (
+          fragment.type === 'video' ? (
+            <video src={fragment.thumbUrl} controls />
+          ) : fragment.type === 'voice' ? (
+            <div className="detail-media__voice">
+              <audio src={fragment.thumbUrl} controls />
+            </div>
+          ) : (
+            <img src={fragment.thumbUrl} alt="" />
+          )
+        ) : (
+          <div className="detail-media__placeholder" aria-hidden>
+            <Icon size={36} strokeWidth={1.5} />
+          </div>
+        )}
+      </div>
+
+      <div className="stack-2">
+        <div className="detail-title">{fragment.title}</div>
+        <div className="detail-meta">
+          {formatFull(fragment.capturedAt)}
+          {fragmentSpace && !fragmentSpace.isPersonal && fragmentSpace.color && (
+            <>
+              {' · '}
+              <span
+                className="space-dot space-dot--inline"
+                style={{ background: fragmentSpace.color }}
+                aria-hidden
+              />
+              {fragmentSpace.name}
+            </>
+          )}
+          {showAuthor && authorName && <span> · {authorName}</span>}
+          {pending && <span> · 저장 중</span>}
+        </div>
+      </div>
+
+      <CaptureSheet
+        open={editOpen}
+        initialType={fragment.type}
+        initialDraft={{
+          type: fragment.type,
+          title: fragment.title,
+          previewUrl: fragment.thumbUrl,
+        }}
+        onClose={() => setEditOpen(false)}
+        onSave={handleEdit}
+        saveLabel="수정 저장"
+      />
+
+      <ConfirmSheet
+        open={confirmOpen}
+        title="이 결을 비울까요?"
+        message="비운 결은 되돌릴 수 없어요."
+        confirmLabel="비우기"
+        destructive
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmOpen(false)}
+      />
+
+      {canViewFull && (
+        <PhotoViewer
+          open={viewerOpen}
+          src={fragment.thumbUrl!}
+          alt={fragment.title}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+interface DetailHeaderProps {
+  onBack: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}
+
+function DetailHeader({ onBack, onEdit, onDelete }: DetailHeaderProps) {
+  return (
+    <header className="detail-header">
+      <button className="detail-header__back" aria-label="뒤로" onClick={onBack}>
+        <ChevronLeft size={20} strokeWidth={1.5} />
+      </button>
+      <span className="detail-header__title">결</span>
+      <div className="detail-header__actions">
+        {onEdit && (
+          <button className="detail-header__action" aria-label="편집" onClick={onEdit}>
+            <Pencil size={17} strokeWidth={1.5} />
+          </button>
+        )}
+        {onDelete && (
+          <button className="detail-header__action" aria-label="비우기" onClick={onDelete}>
+            <Trash2 size={17} strokeWidth={1.5} />
+          </button>
+        )}
+      </div>
+    </header>
+  );
+}

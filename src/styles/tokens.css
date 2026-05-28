@@ -1,0 +1,67 @@
+:root {
+  /* ─── Color · semantic (matches reference HTML naming) ─── */
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f2f4f6;
+  --color-background-info: #e6f5f0;
+
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #5f6063;
+  --color-text-tertiary: #9aa0a6;
+  --color-text-info: #1d9e75;
+  --color-text-on-accent: #ffffff;
+
+  --color-border-tertiary: #eceef0;
+  --color-border-secondary: #d9dce0;
+
+  --color-accent: #1d9e75;
+  --color-accent-press: #178b66;
+
+  /* ─── Radius ─── */
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 14px;
+  --border-radius-xl: 20px;
+
+  /* ─── Spacing (8pt) ─── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ─── Typography (BookkMyungjo · Korean serif body) ─── */
+  --font-body:
+    'BookkMyungjo', 'Apple Myungjo', 'Nanum Myeongjo', 'KoPub Batang',
+    'Batang', serif;
+
+  --type-display: 22px;
+  --type-display-lh: 30px;
+  --type-title: 20px;
+  --type-title-lh: 28px;
+  --type-section: 17px;
+  --type-section-lh: 24px;
+  --type-body: 15px;
+  --type-body-lh: 22px;
+  --type-body-sm: 14px;
+  --type-body-sm-lh: 20px;
+  --type-meta: 13px;
+  --type-meta-lh: 18px;
+  --type-caption: 12px;
+  --type-caption-lh: 16px;
+  --type-micro: 11px;
+  --type-micro-lh: 14px;
+
+  /* ─── Motion ─── */
+  --motion-quick: 120ms;
+  --motion-base: 220ms;
+  --motion-slow: 360ms;
+  --ease-soft: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ─── Layout ─── */
+  --column-max: 480px;
+  --matte-pad: 14px;
+  --tabbar-height: 60px;
+}

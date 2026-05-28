@@ -1,0 +1,15 @@
+node_modules
+dist
+dist-ssr
+*.local
+.vite
+.DS_Store
+.env
+.env.local
+*.tsbuildinfo
+
+# Claude Code internal config (skills, hooks, settings)
+.claude/
+# Planning extract (internal — docx is the source)
+_planning_extract.txt
+
