@@ -127,7 +127,11 @@ export async function linkKakao(): Promise<AuthActionResult> {
   if (!supabase) return { ok: false, error: '클라우드가 연결돼 있지 않아요.' };
   try {
     const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
-    const { error } = await supabase.auth.linkIdentity({ provider: 'kakao', options: { redirectTo } });
+    // 이메일 scope는 카카오가 막아둠(KOE205) — 닉네임만 요청. 계정 잇기는 카카오 고유 id로.
+    const { error } = await supabase.auth.linkIdentity({
+      provider: 'kakao',
+      options: { redirectTo, scopes: 'profile_nickname' },
+    });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {
@@ -144,7 +148,11 @@ export async function signInWithKakao(): Promise<AuthActionResult> {
   if (!supabase) return { ok: false, error: '클라우드가 연결돼 있지 않아요.' };
   try {
     const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
-    const { error } = await supabase.auth.signInWithOAuth({ provider: 'kakao', options: { redirectTo } });
+    // 이메일 scope 미요청(KOE205 방지) — 닉네임만.
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'kakao',
+      options: { redirectTo, scopes: 'profile_nickname' },
+    });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {
