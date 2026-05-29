@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, Pencil, Trash2, Camera, Video, Mic, Quote } from 'lucide-react';
 import { useFragmentStore } from '../../lib/fragmentStore';
 import { useSpaceStore } from '../../lib/spaceStore';
+import { useToastStore } from '../../lib/toastStore';
 import { CaptureSheet, type CaptureDraft } from '../../components/CaptureSheet';
 import { ConfirmSheet } from '../../components/ConfirmSheet';
 import { PhotoViewer } from '../../components/PhotoViewer';
@@ -35,6 +36,7 @@ export function FragmentDetailPage() {
   const updateFragment = useFragmentStore((s) => s.update);
   const removeFragment = useFragmentStore((s) => s.remove);
   const spaces = useSpaceStore((s) => s.spaces);
+  const showToast = useToastStore((s) => s.show);
 
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -96,6 +98,7 @@ export function FragmentDetailPage() {
     removeFragment(fragment.id);
     setConfirmOpen(false);
     navigate(-1);
+    showToast('결을 비웠어요');
   };
 
   const canViewFull = fragment.type === 'photo' && !!fragment.thumbUrl;

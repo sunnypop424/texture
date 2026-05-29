@@ -62,7 +62,8 @@ export function DailyPage() {
 
   const handleSave = async (draft: CaptureDraft) => {
     const me = getCurrentUser();
-    const fragmentId = `local-${Date.now()}`;
+    // 오프라인 우선 — 클라이언트가 UUID를 발급해 그대로 DB PK로 쓴다.
+    const fragmentId = crypto.randomUUID();
     let thumbUrl = draft.previewUrl;
     let hasLocalMedia = false;
 

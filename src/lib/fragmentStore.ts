@@ -19,6 +19,8 @@ interface FragmentStoreState {
   update: (id: string, patch: Partial<Omit<Fragment, 'id'>>) => void;
   remove: (id: string) => void;
   markSynced: (id: string) => void;
+  /** 익명 세션 확보 시 'me'로 남긴 결의 authorId를 실제 uid로 일괄 치환. 변경 개수 반환. */
+  remapAuthor: (oldId: string, newId: string) => number;
   clearRecent: () => void;
 }
 
@@ -142,6 +144,22 @@ export const useFragmentStore = create<FragmentStoreState>((set, get) => ({
       pendingIds.delete(id);
       return { pendingIds };
     });
+  },
+
+  remapAuthor: (oldId, newId) => {
+    if (oldId === newId) return 0;
+    let changed = 0;
+    set((s) => {
+      const fragments = s.fragments.map((f) => {
+        if (f.authorId !== oldId) return f;
+        changed += 1;
+        return { ...f, authorId: newId };
+      });
+      if (changed === 0) return s;
+      persist(fragments);
+      return { fragments };
+    });
+    return changed;
   },
 
   clearRecent: () => set({ recentlyAddedId: null }),

@@ -63,6 +63,8 @@ interface SpaceStoreState {
   /** 백업 복원용 — 같은 id의 공간이 없을 때만 그대로 추가. 이미 있으면 기존 것을 보존. */
   importSpace: (space: Space) => void;
   updateMemberDisplayName: (userId: string, name: string) => void;
+  /** 익명 세션 확보 시 'me'로 남긴 createdBy·members.userId·invites.invitedBy를 실제 uid로 일괄 치환. */
+  remapUser: (oldId: string, newId: string) => void;
   joinSpace: (spaceId: string, user: User) => void;
   generateInvite: (spaceId: string) => Invite;
   acceptInvite: (token: string, user: User) => Space | null;
@@ -153,7 +155,8 @@ export const useSpaceStore = create<SpaceStoreState>((set, get) => ({
     const now = new Date().toISOString();
     const color = pickNextHue(get().spaces);
     const newSpace: Space = {
-      id: `space-${Date.now()}`,
+      // 오프라인 우선 — 클라이언트가 UUID를 발급해 그대로 DB PK로 쓴다.
+      id: crypto.randomUUID(),
       name,
       isPersonal: false,
       createdBy: me.id,
@@ -195,6 +198,33 @@ export const useSpaceStore = create<SpaceStoreState>((set, get) => ({
       if (!changed) return s;
       persistSpaces(spaces);
       return { spaces };
+    });
+  },
+
+  remapUser: (oldId, newId) => {
+    if (oldId === newId) return;
+    set((s) => {
+      let changed = false;
+      const spaces = s.spaces.map((sp) => {
+        const createdBy = sp.createdBy === oldId ? newId : sp.createdBy;
+        let membersChanged = false;
+        const members = sp.members.map((m) => {
+          if (m.userId !== oldId) return m;
+          membersChanged = true;
+          return { ...m, userId: newId };
+        });
+        if (createdBy === sp.createdBy && !membersChanged) return sp;
+        changed = true;
+        return { ...sp, createdBy, members };
+      });
+      const invites = s.invites.map((i) =>
+        i.invitedBy === oldId ? { ...i, invitedBy: newId } : i,
+      );
+      const invitesChanged = invites.some((i, idx) => i !== s.invites[idx]);
+      if (!changed && !invitesChanged) return s;
+      if (changed) persistSpaces(spaces);
+      if (invitesChanged) persistInvites(invites);
+      return { spaces, invites };
     });
   },
 

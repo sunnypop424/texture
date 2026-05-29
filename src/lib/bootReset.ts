@@ -9,7 +9,7 @@ import { keys as idbKeys, del as idbDel } from 'idb-keyval';
  * 스토어가 저장소를 읽기 전에 실행되어야 하므로 main.tsx에서 가장 먼저 await한다.
  */
 const RESET_FLAG = 'gyeol:reset-version';
-const RESET_VERSION = '2026-05-29-full-wipe';
+const RESET_VERSION = '2026-05-29-cloud-rekey';
 
 export async function runBootReset(): Promise<void> {
   if (typeof window === 'undefined') return;
