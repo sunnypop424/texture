@@ -7,6 +7,7 @@ import { FragmentItem } from '../../components/FragmentItem';
 import { CaptureSheet, type CaptureDraft } from '../../components/CaptureSheet';
 import { SpaceChip } from '../../components/SpaceChip';
 import { WeekRecapCard } from '../../components/WeekRecapCard';
+import { Toast } from '../../components/Toast';
 import { useFragmentStore } from '../../lib/fragmentStore';
 import { useSpaceStore } from '../../lib/spaceStore';
 import { useActiveSpaceFragments } from '../../lib/useActiveSpaceFragments';
@@ -33,6 +34,7 @@ export function TodayPage() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetType, setSheetType] = useState<MediaType>('photo');
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
 
   const todays = fragments
     .filter((f) => f.dayDate === todayKey)
@@ -67,6 +69,7 @@ export function TodayPage() {
     };
     addFragment(next);
     setSheetOpen(false);
+    setSavedMsg('오늘의 결을 남겼어요');
     if (!onboarded) markOnboarded();
   };
 
@@ -115,6 +118,8 @@ export function TodayPage() {
         onClose={() => setSheetOpen(false)}
         onSave={handleSave}
       />
+
+      <Toast message={savedMsg} onDone={() => setSavedMsg(null)} />
     </div>
   );
 }

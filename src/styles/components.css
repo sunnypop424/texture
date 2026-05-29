@@ -1162,6 +1162,43 @@
   color: var(--color-text-tertiary);
 }
 
+/* ─── Toast (capture confirmation) ─── */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar-height) + 18px + env(safe-area-inset-bottom, 0));
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 15px;
+  border-radius: var(--border-radius-lg);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-size: var(--type-meta);
+  white-space: nowrap;
+  animation: toast-in var(--motion-base) var(--ease-soft) both;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ─── Detail: quiet connection to the same day ─── */
+.detail-related {
+  border-top: 0.5px solid var(--color-border-tertiary);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* ─── Empty-state inline link ─── */
 .empty__link {
   display: inline-block;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, Pencil, Trash2, Camera, Video, Mic, Quote } from 'lucide-react';
 import { useFragmentStore } from '../../lib/fragmentStore';
@@ -6,6 +6,7 @@ import { useSpaceStore } from '../../lib/spaceStore';
 import { CaptureSheet, type CaptureDraft } from '../../components/CaptureSheet';
 import { ConfirmSheet } from '../../components/ConfirmSheet';
 import { PhotoViewer } from '../../components/PhotoViewer';
+import { FragmentItem } from '../../components/FragmentItem';
 import { saveMedia, removeMedia } from '../../lib/mediaStore';
 import type { Fragment } from '../../types/fragment';
 
@@ -40,6 +41,19 @@ export function FragmentDetailPage() {
   const [viewerOpen, setViewerOpen] = useState(false);
 
   const fragment: Fragment | undefined = fragments.find((f) => f.id === id);
+
+  // 같은 날·같은 공간에 남긴 다른 결 — 조용한 연결.
+  const sameDay = useMemo(() => {
+    if (!fragment) return [];
+    return fragments
+      .filter(
+        (f) =>
+          f.id !== fragment.id &&
+          f.dayDate === fragment.dayDate &&
+          f.spaceId === fragment.spaceId,
+      )
+      .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+  }, [fragments, fragment]);
 
   if (!fragment) {
     return (
@@ -142,6 +156,24 @@ export function FragmentDetailPage() {
           {pending && <span> · 저장 중</span>}
         </div>
       </div>
+
+      {sameDay.length > 0 && (
+        <section className="detail-related">
+          <div className="section-sub">같은 날 남긴 다른 결</div>
+          <div>
+            {sameDay.map((f) => (
+              <FragmentItem
+                key={f.id}
+                fragment={f}
+                onOpen={(fid) => navigate(`/fragments/${fid}`)}
+              />
+            ))}
+          </div>
+          <button className="empty__link" onClick={() => navigate(`/days/${fragment.dayDate}`)}>
+            이 날 전체 보기
+          </button>
+        </section>
+      )}
 
       <CaptureSheet
         open={editOpen}

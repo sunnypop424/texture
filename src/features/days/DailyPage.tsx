@@ -6,6 +6,7 @@ import { FragmentItem } from '../../components/FragmentItem';
 import { CaptureEntry } from '../../components/CaptureEntry';
 import { MediaToggle } from '../../components/MediaToggle';
 import { CaptureSheet, type CaptureDraft } from '../../components/CaptureSheet';
+import { Toast } from '../../components/Toast';
 import { useFragmentStore } from '../../lib/fragmentStore';
 import { useSpaceStore } from '../../lib/spaceStore';
 import { useViewSpaceFragments } from '../../lib/useViewSpaceFragments';
@@ -26,6 +27,7 @@ export function DailyPage() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetType, setSheetType] = useState<MediaType>('photo');
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
 
   const date = dayDate && /^\d{4}-\d{2}-\d{2}$/.test(dayDate) ? parseDayKey(dayDate) : null;
   const isValid = !!date && !Number.isNaN(date.getTime());
@@ -86,6 +88,7 @@ export function DailyPage() {
     };
     addFragment(next);
     setSheetOpen(false);
+    setSavedMsg(isToday ? '오늘의 결을 남겼어요' : '이 날에 결을 담았어요');
   };
 
   return (
@@ -143,6 +146,8 @@ export function DailyPage() {
           onSave={handleSave}
         />
       )}
+
+      <Toast message={savedMsg} onDone={() => setSavedMsg(null)} />
     </div>
   );
 }
