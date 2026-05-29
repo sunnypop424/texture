@@ -38,18 +38,30 @@
 
 ---
 
-## 4. 권장 기술 스택
+## 4. 기술 스택 (현재 구현 기준)
 
-- **프런트엔드:** Expo (React Native) + TypeScript
-- **백엔드:** Supabase — Postgres, Auth, Storage, Realtime
-- **서버 상태:** TanStack Query (React Query)
-- **로컬/UI 상태:** Zustand
-- **로컬 우선(offline-first):** 캡처는 낙관적(optimistic) 로컬 쓰기 후 백그라운드 동기화. MVP에서는 로컬 큐 + 재시도로 시작하고, 필요 시 WatermelonDB 등 도입 검토.
-- **알림:** Expo Notifications (사용자가 고른 시간대의 하루 1회 부드러운 알림)
-- **미디어:** Expo Camera / Image Picker → Supabase Storage 업로드
-- **위젯:** iOS WidgetKit / Android App Widget (네이티브 모듈, 빠른 캡처 진입)
+- **프런트엔드:** React 18 + Vite + TypeScript (웹). *(초기 권장안은 Expo였으나 React 웹으로 진행 중 — 사용자 지시 우선.)*
+- **로컬/UI 상태:** Zustand. **서버 상태/동기화는 자체 sync 엔진**(`lib/syncEngine.ts`) — TanStack Query 미사용.
+- **백엔드:** **Supabase 단일** — Postgres + Auth + Storage. (RLS·RPC로 공유까지 처리. 별도 서버 없음.)
+- **로컬 우선(offline-first):** 캡처는 IndexedDB(`idb-keyval`)에 낙관적 로컬 쓰기 → 배경 sync(로컬 큐 + 지수 백오프 재시도). 미디어 blob도 로컬 우선, Storage로 파일당 업로드.
+- **미디어:** 웹 `MediaRecorder`/`getUserMedia`/canvas. 캡처 시 경량화(`lib/mediaLimits.ts`: 사진 다운스케일, 영상 30초·720p, 음성 60초). 표시는 지연 로드(`useMediaUrl`).
 
-> 스택은 권장안이다. 변경 시 이 파일을 함께 업데이트한다.
+### 4.1 패키징 — APK (Capacitor)
+- React 웹을 **Capacitor**로 감싸 **APK로 배포**한다. 웹 자산이 APK에 동봉되어 **별도 웹 호스팅 불필요** — 기기 ↔ Supabase 직접 통신. *"Supabase 외 서버 0"* 목표 충족.
+- **보안:** Supabase **anon key는 공개 키**라 APK 동봉이 정상·안전하다. 보안 경계는 키 숨김이 아니라 **RLS**다. **`service_role` key는 절대 클라이언트/APK에 넣지 않는다.** production은 익명 가입에 captcha 권장.
+
+### 4.2 인증 (단계적, 마찰 최소)
+- **익명 시작**(`signInAnonymously`, 가입 폼 없이 바로 캡처 — §11 Day 0).
+- **계정 잇기/복원:** **카카오 OAuth(1급)** + 이메일 매직링크(보조). *부모님처럼 이메일이 어려운 사용자를 위해 카카오를 앞세운다.*
+  - 잇기 = `linkIdentity({provider:'kakao'})` (익명 uid 유지 → 기존 결 보존). 불러오기 = `signInWithOAuth({provider:'kakao'})`. (`lib/auth.ts`)
+  - **설정 필요(사용자):** 카카오 개발자(developers.kakao.com)에서 앱 생성 → REST API 키 + Redirect URI 등록(`https://<project>.supabase.co/auth/v1/callback`) → Supabase **Authentication → Providers → Kakao**에 키 입력. APK에서는 딥링크 redirect(커스텀 스킴) 처리 추가 필요(후속).
+  - 설정 전에는 버튼이 graceful 실패 안내("준비 중일 수 있어요"). 네이버는 보류(카카오만).
+
+### 4.3 알림 (Capacitor)
+- **로컬 알림**(서버 불필요): 사용자가 고른 시간대에 **오늘의 결 미등록 시** 하루 1회 부드럽게. 개인·공유 공간 모두. *streak/죄책감 장치 금지(§3).*
+- **푸시 알림**(서버 트리거): **공유 공간에 다른 멤버의 신규 결**이 등록되면 그 공간 멤버에게 푸시. Supabase **DB Webhook/Edge Function → FCM**으로 발송(여전히 Supabase 범위 내). 빈도는 묶어서(배치) 보내 압박 없이.
+
+> 스택 변경 시 이 파일을 함께 업데이트한다.
 
 ---
 
@@ -60,10 +72,11 @@
 - `profiles` — `id`(auth uid), `display_name`, `created_at`
 - `spaces` — `id`, `name`, `is_personal`(bool), `created_by`, `created_at`
   - 개인 로그: `is_personal = true`, 멤버 1명
-  - 공유 공간: `is_personal = false`, 멤버 2–6명
-- `space_members` — `space_id`, `user_id`, `role`, `joined_at`
+  - 공유 공간: `is_personal = false`, 멤버 2명 이상 — **상한 50(사실상 비제한)**. 인원 고정 안 함.
+- `space_members` — `space_id`, `user_id`, `role`, `joined_at`, `display_name`(공간별 표시 이름)
 - `fragments` — `id`, `space_id`, `author_id`, `type`(`photo|video|text|voice`), `media_path`(nullable), `text_content`(nullable), `captured_at`, `day_date`(local date), `created_at`
 - `invites` — `token`, `space_id`, `invited_by`, `expires_at`, `accepted_by`(nullable)
+- **용량 추적(§14.2):** 공간별 누적 미디어 바이트를 집계해 무료 한도/초과 판정에 쓴다. Storage 객체 메타 합산 또는 별도 카운터(추후).
 
 규칙:
 - 모든 `fragment`는 정확히 하나의 `space`에 속한다.
@@ -294,10 +307,28 @@ npm test
 | 그룹·페어 플랜 | 가장 투자도 높은 한 명이 결제하면 공유방 전원 혜택 — 관계적 가치 구매 | ₩7,900/월 (가설) |
 | 프린트 커머스 | 1년 치 결 → 포토북·연말 책·벽 캘린더·커플 다이어리. 셋로그가 못 따라오는 차별 수익원 | ₩25,000–50,000/건 |
 
-### 14.2 가드레일
+### 14.2 용량(스토리지)을 Plus의 핵심 트리거로
+
+돈은 "백업 여부"가 아니라 **용량·원본 화질·영속성**에서 받는다. (기본 동기화·복원·공유는 무료 — §14.3, [[backup_plan_gating]].)
+
+**용량 한도(가설 — `lib/plan.ts`에 상수로, 초기 데이터로 조정):**
+
+| 구분 | 무료 | Plus |
+|------|------|------|
+| 개인 공간(클라우드 백업) | **2GB** | **50GB** (Plus·개인 ₩4,900/월) |
+| 공유 공간 1개당 | **1GB** | **50GB** (그룹·페어 ₩7,900/월) |
+
+- **개인 공간:** 로컬 보관은 기기 용량이라 우리 비용 0. 무료 2GB 클라우드 백업, **초과 시 Plus로 추가 용량** 유도. *이미 올라간 과거는 계속 열람·복원 가능*(인질 금지) — 막는 건 "더 올리기"뿐.
+- **공유 공간:** 공간별 **누적 용량(멤버 모두의 결 합산)을 보여주고**, 무료 1GB **초과 시 그 공간을 Plus**로(그룹·페어 — 한 명이 결제하면 공간 전원 계속 사용).
+- 화질 차등 병행: 무료=표준(다운스케일, 가벼움) / Plus=원본 화질 → 같은 결도 Plus가 용량을 더 쓰는 만큼 용량 한도와 자연히 맞물림.
+- 표시 위치: 설정 데이터 섹션(개인) + 공간 상세 시트(공유). 업그레이드 제안은 **용량이 찰 때** 그 자리에서만(가치를 느낀 순간).
+- 화질 차등도 병행: 무료=표준(다운스케일) / Plus=원본 화질. 용량 한도와 함께 작동.
+
+### 14.3 가드레일
 
 - **타이밍** — PMF·습관 형성 전에 과금 들이밀지 않음. 업그레이드 제안은 **가치를 느낀 순간에만**(보관 용량 가득, 연말 회고 내보내기, 프린트 진입).
-- **추억을 인질로 잡지 않기** — 사용자 본인 과거 기록 열람은 **항상 무료**. 페이월은 **미래·부가 기능에만**. 과거 잠그는 순간 신뢰 붕괴.
+- **추억을 인질로 잡지 않기** — 사용자 본인 과거 기록 **열람·복원은 항상 무료**. 페이월은 **미래·부가(더 올리기·원본화질·깊이)** 에만. 과거 잠그는 순간 신뢰 붕괴.
+- **기본 동기화·복원·공유는 무료** — 공유에 클라우드가 필수이므로 백업 자체를 막지 않는다. 정책 단일 지점: `lib/plan.ts`.
 - **광고·데이터 판매 금지** — 정체성과 직접 충돌.
 
 ---
@@ -308,8 +339,9 @@ npm test
 - 혼합 매체 결 캡처(사진·영상·글·음성), 오프라인 우선
 - 하루 단위 자동 정리 + 캘린더 아카이브
 - 주간 자동 회고
-- 공유 공간 1팀(최대 3인) + 비동기 공동 페이지 + 초대 플로우
-- 빠른 캡처용 홈 위젯(웹은 PWA), 사용자 지정 시간대의 부드러운 알림 1회/일
+- 공유 공간 + 비동기 공동 페이지 + 초대 플로우 (인원 상한 50, 사실상 비제한)
+- **알림 2종**(§4.3): ① 개인·공유 공간 — 고른 시간대에 **오늘의 결 미등록 시** 로컬 알림 1회/일. ② 공유 공간 — **다른 멤버 신규 결** 등록 시 푸시.
+- **APK 배포(Capacitor)** — 빠른 캡처는 앱 진입 + (후속) 홈 위젯.
 
 ### 15.2 비범위 (후속 단계)
 - 자동 영상 브이로그 생성, HD 내보내기
@@ -326,8 +358,10 @@ npm test
 | 첫 2주 활성화 실패 | 온보딩·첫 캡처 마찰 최소화에 자원 집중 |
 | 빈 방 문제 | 초대받은 사용자에게 초대자 콘텐츠 선노출 |
 | 정체성 훼손 유혹 | 단기 성장 위해 광고·공개 피드·바이럴 장치 안 붙임 |
-| 추억 인질화 | 본인 과거 열람은 항상 무료 유지 |
+| 추억 인질화 | 본인 과거 열람·복원은 항상 무료 유지 |
 | 프라이버시 | 솔로 기록은 기본 비공개, 공유는 공간별 명시적 동의로만 |
+| 클라이언트 key 노출 | anon key는 공개 키라 APK 동봉 안전 — 보안은 RLS로. `service_role`은 절대 클라이언트 금지 |
+| 스토리지 비용 | 캡처 시 경량화 + 지연 로드(egress↓) + 로컬 캐시 + 원본화질/추가용량은 Plus가 부담 → 비용이 매출과 동반 |
 
 ---
 

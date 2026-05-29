@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Upload, RefreshCcw, Square } from 'lucide-react';
+import { downscaleImage, getVideoDurationMs, MAX_VIDEO_MS } from '../lib/mediaLimits';
+import { activeSpaceKeepsOriginal } from '../lib/plan';
+
+/** Plus(원본 화질) 공간이면 원본 유지, 아니면 다운스케일. */
+async function fitImage(blob: Blob): Promise<Blob> {
+  return activeSpaceKeepsOriginal() ? blob : downscaleImage(blob);
+}
 
 type FacingMode = 'user' | 'environment';
 
@@ -19,12 +26,12 @@ export function PhotoCapture({ previewUrl, onComplete }: PhotoCaptureProps) {
   const [cameraOpen, setCameraOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const pickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    onComplete({ url, blob: file });
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!file) return;
+    const blob = await fitImage(file); // 무료=다운스케일 / Plus=원본
+    onComplete({ url: URL.createObjectURL(blob), blob });
   };
 
   if (previewUrl) {
@@ -67,14 +74,20 @@ interface VideoCaptureProps {
 
 export function VideoCapture({ previewUrl, onComplete }: VideoCaptureProps) {
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [tooLong, setTooLong] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const pickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    onComplete({ url, blob: file });
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!file) return;
+    const ms = await getVideoDurationMs(file);
+    if (ms > MAX_VIDEO_MS + 1500) {
+      setTooLong(true); // 30초 초과 갤러리 영상은 받지 않음
+      return;
+    }
+    setTooLong(false);
+    onComplete({ url: URL.createObjectURL(file), blob: file });
   };
 
   if (previewUrl) {
@@ -105,6 +118,9 @@ export function VideoCapture({ previewUrl, onComplete }: VideoCaptureProps) {
           <span>갤러리에서 선택</span>
         </button>
       </div>
+      {tooLong && (
+        <p className="capsheet__hint">영상은 30초까지 담을 수 있어요. 더 짧은 영상을 골라주세요.</p>
+      )}
       <input ref={fileInputRef} type="file" accept="video/*" onChange={pickFile} hidden />
     </>
   );
@@ -150,7 +166,8 @@ function useLiveStream({ video, audio, facing }: LiveStreamOptions) {
     const start = async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: video ? { facingMode: facing } : false,
+          // 720p로 제약 — 용량·대역폭 절감(사진은 어차피 다운스케일).
+          video: video ? { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } } : false,
           audio,
         });
         if (cancelled) {
@@ -198,8 +215,10 @@ function PhotoCameraLive({ onCapture, onCancel }: PhotoCameraLiveProps) {
     if (!ctx) return;
     ctx.drawImage(video, 0, 0);
     canvas.toBlob(
-      (blob) => {
-        if (blob) onCapture({ url: URL.createObjectURL(blob), blob });
+      async (blob) => {
+        if (!blob) return;
+        const fitted = await fitImage(blob); // 무료=다운스케일 / Plus=원본
+        onCapture({ url: URL.createObjectURL(fitted), blob: fitted });
       },
       'image/jpeg',
       0.92,
@@ -239,7 +258,13 @@ function VideoCameraLive({ onCapture, onCancel }: VideoCameraLiveProps) {
     if (!recording) return;
     const startedAt = Date.now();
     const id = window.setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+      const ms = Date.now() - startedAt;
+      setElapsed(Math.floor(ms / 1000));
+      if (ms >= MAX_VIDEO_MS) {
+        // 30초에서 자동 정지 — 가볍게.
+        recorderRef.current?.stop();
+        setRecording(false);
+      }
     }, 250);
     return () => window.clearInterval(id);
   }, [recording]);
@@ -247,7 +272,12 @@ function VideoCameraLive({ onCapture, onCancel }: VideoCameraLiveProps) {
   const start = () => {
     if (!streamRef.current || !ready) return;
     try {
-      const recorder = new MediaRecorder(streamRef.current);
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(streamRef.current, { videoBitsPerSecond: 2_500_000 });
+      } catch {
+        recorder = new MediaRecorder(streamRef.current); // 옵션 미지원 환경 폴백
+      }
       chunksRef.current = [];
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -276,7 +306,7 @@ function VideoCameraLive({ onCapture, onCancel }: VideoCameraLiveProps) {
       error={error}
       onCancel={onCancel}
       onFlip={recording ? undefined : () => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}
-      topBadge={recording ? <span className="camera__rec">● {formatElapsed(elapsed)}</span> : null}
+      topBadge={recording ? <span className="camera__rec">● {formatElapsed(elapsed)} / 0:30</span> : null}
     >
       {recording ? (
         <button

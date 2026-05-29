@@ -8,6 +8,10 @@ dist-ssr
 .env.local
 *.tsbuildinfo
 
+# Capacitor 네이티브 프로젝트(생성물) — `npx cap add android`로 각자 생성
+android/
+ios/
+
 # Claude Code internal config (skills, hooks, settings)
 .claude/
 # Planning extract (internal — docx is the source)

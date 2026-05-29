@@ -3,6 +3,7 @@ import { Camera, Video, PenLine, Mic, Square, Play, Pause } from 'lucide-react';
 import { Sheet } from './Sheet';
 import { Button } from './Button';
 import { PhotoCapture, VideoCapture, type MediaResult } from './MediaCapture';
+import { MAX_VOICE_MS } from '../lib/mediaLimits';
 import type { MediaType } from '../types/fragment';
 
 const MEDIA_LABELS: Record<MediaType, string> = {
@@ -186,6 +187,7 @@ function VoiceField({ previewUrl, onComplete }: VoiceFieldProps) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const maxTimerRef = useRef<number | null>(null);
 
   const start = async () => {
     try {
@@ -203,12 +205,18 @@ function VoiceField({ previewUrl, onComplete }: VoiceFieldProps) {
       recorder.start();
       recorderRef.current = recorder;
       setRecording(true);
+      // 최대 60초에서 자동 정지 — 가볍게.
+      maxTimerRef.current = window.setTimeout(stop, MAX_VOICE_MS);
     } catch (err) {
       console.warn('voice record unavailable', err);
     }
   };
 
   const stop = () => {
+    if (maxTimerRef.current !== null) {
+      window.clearTimeout(maxTimerRef.current);
+      maxTimerRef.current = null;
+    }
     recorderRef.current?.stop();
     setRecording(false);
   };

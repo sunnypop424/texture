@@ -3,6 +3,7 @@ import { Check, Copy } from 'lucide-react';
 import { Sheet } from './Sheet';
 import { Button } from './Button';
 import { useSpaceStore } from '../lib/spaceStore';
+import { pushInvite } from '../lib/sharing';
 
 interface InviteSheetProps {
   open: boolean;
@@ -20,6 +21,7 @@ export function InviteSheet({ open, spaceId, onClose }: InviteSheetProps) {
       const inv = generate(spaceId);
       setToken(inv.token);
       setCopied(false);
+      void pushInvite(inv); // 다른 기기에서도 이 링크가 열리도록 서버에 올린다
     }
     if (!open) {
       setToken(null);

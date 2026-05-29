@@ -1,49 +1,41 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, CloudUpload, CloudDownload, Download, Lock } from 'lucide-react';
+import JSZip from 'jszip';
+import { ChevronLeft, ChevronRight, CloudUpload, CloudDownload, Download } from 'lucide-react';
 import { Button } from '../../components/Button';
-import { Sheet } from '../../components/Sheet';
 import { Segmented } from '../../components/Segmented';
+import { StorageBar } from '../../components/StorageBar';
+import { quotaBytes } from '../../lib/plan';
+import { PERSONAL_SPACE_ID } from '../../data/initialSpaces';
 import { useFragmentStore } from '../../lib/fragmentStore';
 import { useSpaceStore } from '../../lib/spaceStore';
 import { useIdentityStore } from '../../lib/identity';
-import { loadMediaBlob, saveMedia } from '../../lib/mediaStore';
-import {
-  pushBackup,
-  pullBackup,
-  listBackups,
-  type CloudBackupSummary,
-} from '../../lib/cloudBackup';
+import { loadMediaBlob } from '../../lib/mediaStore';
+import { flush, pullFromCloud } from '../../lib/syncEngine';
 import { readTheme, writeTheme, type Theme } from '../../lib/theme';
-import type { Fragment } from '../../types/fragment';
-import type { Space } from '../../types/space';
+import { isCloudEnabled } from '../../lib/supabase';
+import {
+  getAuthInfo, linkEmail, signInWithEmail, signOutCloud, linkKakao, signInWithKakao,
+  type AuthInfo,
+} from '../../lib/auth';
+import {
+  getNotifTime, setNotifTime as persistNotifTime, notifEnabled, setNotifEnabled,
+  requestNotifPermission, syncReminder, notifSupported,
+} from '../../lib/notifications';
 
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-}
-
-const NOTIF_KEY = 'gyeol:notif-time:v1';
-
-function readNotifTime(): string {
-  if (typeof window === 'undefined') return '21:00';
-  try {
-    return window.localStorage.getItem(NOTIF_KEY) || '21:00';
-  } catch {
-    return '21:00';
-  }
-}
-
-function writeNotifTime(value: string): void {
-  try {
-    window.localStorage.setItem(NOTIF_KEY, value);
-  } catch {
-    // ignore
-  }
+/** contentType → 파일 확장자(내보내기 ZIP의 미디어 파일명용). */
+function extForType(type: string): string {
+  if (type.includes('jpeg') || type.includes('jpg')) return 'jpg';
+  if (type.includes('png')) return 'png';
+  if (type.includes('webp')) return 'webp';
+  if (type.includes('gif')) return 'gif';
+  if (type.includes('mp4')) return 'mp4';
+  if (type.includes('webm')) return 'webm';
+  if (type.includes('quicktime') || type.includes('mov')) return 'mov';
+  if (type.includes('mpeg') || type.includes('mp3')) return 'mp3';
+  if (type.includes('wav')) return 'wav';
+  if (type.includes('ogg')) return 'ogg';
+  return 'bin';
 }
 
 export function SettingsPage() {
@@ -52,17 +44,48 @@ export function SettingsPage() {
   const setDisplayName = useIdentityStore((s) => s.setDisplayName);
   const updateMemberDisplayName = useSpaceStore((s) => s.updateMemberDisplayName);
   const fragments = useFragmentStore((s) => s.fragments);
-  const importFragments = useFragmentStore((s) => s.importFragments);
   const spaces = useSpaceStore((s) => s.spaces);
-  const importSpace = useSpaceStore((s) => s.importSpace);
 
   const [draftName, setDraftName] = useState(me.displayName);
   useEffect(() => setDraftName(me.displayName), [me.displayName]);
 
-  const [notifTime, setNotifTime] = useState<string>(() => readNotifTime());
-  useEffect(() => {
-    writeNotifTime(notifTime);
-  }, [notifTime]);
+  const [notifTime, setNotifTime] = useState<string>(() => getNotifTime());
+  const [notifOn, setNotifOn] = useState<boolean>(() => notifEnabled());
+  const [notifMsg, setNotifMsg] = useState<string | null>(null);
+
+  const changeNotifTime = (value: string) => {
+    setNotifTime(value);
+    persistNotifTime(value);
+    void syncReminder();
+  };
+
+  const toggleNotif = async () => {
+    if (notifOn) {
+      setNotifEnabled(false);
+      setNotifOn(false);
+      setNotifMsg(null);
+      void syncReminder(); // 예약 취소
+      return;
+    }
+    const granted = await requestNotifPermission();
+    if (!granted) {
+      setNotifMsg(
+        notifSupported()
+          ? '알림 권한이 필요해요. 기기 설정에서 허용해 주세요.'
+          : '알림은 앱(설치본)에서 동작해요. 웹에서는 미리 설정만 저장돼요.',
+      );
+      // 웹: 설정만 저장(설치본에서 활성). 네이티브 거부: 끔 유지.
+      if (!notifSupported()) {
+        setNotifEnabled(true);
+        setNotifOn(true);
+      }
+      return;
+    }
+    setNotifEnabled(true);
+    setNotifOn(true);
+    setNotifMsg(null);
+    void syncReminder();
+  };
 
   const [theme, setTheme] = useState<Theme>(() => readTheme());
   const changeTheme = (next: Theme) => {
@@ -70,15 +93,67 @@ export function SettingsPage() {
     writeTheme(next);
   };
 
-  const [backupOpen, setBackupOpen] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
-
-  const [restoreOpen, setRestoreOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
-  const [cloudList, setCloudList] = useState<CloudBackupSummary[] | null>(null);
-
   const [exporting, setExporting] = useState(false);
   const [dataMsg, setDataMsg] = useState<string | null>(null);
+
+  // ── 계정(이메일 연결/복원) ──
+  const cloudOn = isCloudEnabled();
+  const personalSpace = spaces.find((s) => s.isPersonal);
+  const personalUsed = fragments.reduce(
+    (sum, f) => (f.spaceId === PERSONAL_SPACE_ID ? sum + (f.bytes ?? 0) : sum),
+    0,
+  );
+  const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
+  const [emailDraft, setEmailDraft] = useState('');
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountMsg, setAccountMsg] = useState<string | null>(null);
+  // 'link' = 이 기기 기록을 이메일에 잇기(처음). 'restore' = 쓰던 계정 불러오기(다른/새 기기).
+  const [accountMode, setAccountMode] = useState<'link' | 'restore'>('link');
+  useEffect(() => {
+    if (!cloudOn) return;
+    void getAuthInfo().then(setAuthInfo);
+  }, [cloudOn]);
+
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailDraft.trim());
+
+  const handleLinkEmail = async () => {
+    setAccountBusy(true);
+    setAccountMsg(null);
+    const res = await linkEmail(emailDraft.trim());
+    setAccountBusy(false);
+    setAccountMsg(res.ok ? '확인 메일을 보냈어요. 메일의 링크를 누르면 이 이메일로 저장돼요.' : `연결에 실패했어요: ${res.error ?? ''}`);
+  };
+
+  const handleSignIn = async () => {
+    setAccountBusy(true);
+    setAccountMsg(null);
+    const res = await signInWithEmail(emailDraft.trim());
+    setAccountBusy(false);
+    setAccountMsg(res.ok ? '로그인 링크를 보냈어요. 메일의 링크를 누르면 그 계정의 기록을 불러와요.' : `로그인에 실패했어요: ${res.error ?? ''}`);
+  };
+
+  const handleKakao = async () => {
+    setAccountBusy(true);
+    setAccountMsg(null);
+    const res = accountMode === 'link' ? await linkKakao() : await signInWithKakao();
+    // 성공 시 카카오로 이동(리다이렉트) — 실패할 때만 안내.
+    if (!res.ok) {
+      setAccountBusy(false);
+      setAccountMsg(`카카오 연결에 실패했어요: ${res.error ?? ''} (카카오 로그인이 아직 준비 중일 수 있어요.)`);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setAccountBusy(true);
+    await signOutCloud();
+    setAuthInfo(await getAuthInfo());
+    setAccountBusy(false);
+    setAccountMsg('로그아웃했어요. 이 기기에 남긴 기록은 그대로 볼 수 있어요.');
+  };
+
+  const submitAccount = accountMode === 'link' ? handleLinkEmail : handleSignIn;
 
   const commitName = () => {
     const trimmed = draftName.trim();
@@ -91,36 +166,46 @@ export function SettingsPage() {
     updateMemberDisplayName(me.id, trimmed);
   };
 
-  // ── 무료 내보내기: 내 모든 결을 원본 미디어까지 담아 파일로 내려받는다 (결제 무관) ──
+  // ── 무료 내보내기: 내 모든 결을 ZIP으로 내려받는다 (결제 무관) ──
+  // 미디어는 base64 인라인 대신 ZIP 안에 파일당 바이너리로 담는다(영상까지 안전·효율적).
   const exportAll = async () => {
     setExporting(true);
     setDataMsg(null);
     try {
-      const exported = await Promise.all(
+      const zip = new JSZip();
+      const mediaDir = zip.folder('media');
+      const manifestFragments = await Promise.all(
         fragments.map(async (f) => {
-          if (!f.hasLocalMedia) return { ...f };
+          // 휴대 불가능한 런타임 값(objectURL)은 빼고(undefined는 JSON에서 생략됨), 미디어는 파일 참조로 대체.
+          const meta = { ...f, thumbUrl: undefined };
+          if (!f.hasLocalMedia) return meta;
           const blob = await loadMediaBlob(f.id);
-          return blob
-            ? { ...f, thumbUrl: await blobToDataUrl(blob) }
-            : { ...f, thumbUrl: undefined };
+          if (!blob) return { ...meta, hasLocalMedia: false };
+          const file = `${f.id}.${extForType(blob.type)}`;
+          mediaDir?.file(file, blob); // 바이너리 그대로
+          return { ...meta, mediaFile: `media/${file}` };
         }),
       );
-      const data = {
+      const manifest = {
+        format: 'gyeol-export',
+        version: 1,
         exportedAt: new Date().toISOString(),
         author: me,
         spaces,
-        fragments: exported,
+        fragments: manifestFragments,
       };
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
+      zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+
+      const out = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const url = URL.createObjectURL(out);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `gyeol-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `gyeol-${new Date().toISOString().slice(0, 10)}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setDataMsg(`${exported.length}개의 결을 파일로 내려받았어요.`);
+      setDataMsg(`${fragments.length}개의 결을 ZIP 파일로 내려받았어요.`);
     } catch (err) {
       console.warn('export failed', err);
       setDataMsg('내보내기에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
@@ -129,87 +214,31 @@ export function SettingsPage() {
     }
   };
 
-  // ── 백업: 선택한 공간을 클라우드로 올린다 (원본 미디어 포함) ──
-  const runBackup = async (space: Space) => {
-    const spaceFragments = fragments.filter((f) => f.spaceId === space.id);
-    const backupFragments = await Promise.all(
-      spaceFragments.map(async (f) => {
-        if (!f.hasLocalMedia) return { ...f };
-        const mediaBlob = await loadMediaBlob(f.id);
-        if (!mediaBlob) return { ...f, thumbUrl: undefined };
-        return { ...f, thumbUrl: await blobToDataUrl(mediaBlob) };
-      }),
-    );
-    await pushBackup({
-      backedUpAt: new Date().toISOString(),
-      author: me,
-      space,
-      fragments: backupFragments,
-    });
-  };
-
-  const handleSelectSpace = async (space: Space) => {
-    if (space.plan) {
-      setBackupOpen(false);
-      setBackingUp(true);
-      setDataMsg(null);
-      try {
-        await runBackup(space);
-        setDataMsg(`‘${space.name}’ 공간을 클라우드에 백업했어요.`);
-      } catch (err) {
-        console.warn('backup failed', err);
-        setDataMsg('백업에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
-      } finally {
-        setBackingUp(false);
-      }
-    }
-    // 무료 공간은 BackupSheet 안에서 안내만 한다(여기로 오지 않음).
-  };
-
-  // ── 복원: 클라우드에 올라간 백업 목록을 열고, 고른 공간을 되살린다 ──
-  const openRestore = async () => {
-    setRestoreOpen(true);
-    setCloudList(null);
+  // ── 지금 백업: 자동 동기화를 즉시 한 번 돌린다(무료). 평소엔 캡처 시 자동으로 올라감. ──
+  const handleBackupNow = async () => {
+    setBackingUp(true);
+    setDataMsg(null);
     try {
-      setCloudList(await listBackups());
+      await flush();
+      setDataMsg('지금까지의 결을 클라우드에 안전하게 보관했어요.');
     } catch (err) {
-      console.warn('list backups failed', err);
-      setCloudList([]);
+      console.warn('backup failed', err);
+      setDataMsg('백업에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
+    } finally {
+      setBackingUp(false);
     }
   };
 
-  const handleSelectRestore = async (summary: CloudBackupSummary) => {
-    setRestoreOpen(false);
+  // ── 불러오기: 클라우드에 보관된 내 기록을 이 기기로 가져온다(무료, 늘 가능). ──
+  const handleRestore = async () => {
     setRestoring(true);
     setDataMsg(null);
     try {
-      const backup = await pullBackup(summary.spaceId);
-      if (!backup) {
-        setDataMsg('클라우드에서 백업을 찾지 못했어요.');
-        return;
-      }
-      if (backup.space) importSpace(backup.space);
-      // data URL로 담긴 사진·영상·음성 원본을 다시 로컬 미디어로 복원.
-      const restored: Fragment[] = await Promise.all(
-        backup.fragments.map(async (f) => {
-          if (typeof f.thumbUrl === 'string' && f.thumbUrl.startsWith('data:')) {
-            const blob = await (await fetch(f.thumbUrl)).blob();
-            const url = await saveMedia(f.id, blob);
-            return { ...f, thumbUrl: url, hasLocalMedia: true };
-          }
-          return { ...f };
-        }),
-      );
-      const added = importFragments(restored);
-      const skipped = restored.length - added;
-      setDataMsg(
-        added > 0
-          ? `‘${summary.spaceName}’에서 ${added}개의 결을 되살렸어요.${skipped > 0 ? ` (이미 있던 ${skipped}개는 건너뛰었어요.)` : ''}`
-          : '이미 모두 가지고 있는 결이라 새로 추가된 건 없어요.',
-      );
+      await pullFromCloud();
+      setDataMsg('클라우드에 있던 기록을 이 기기로 불러왔어요.');
     } catch (err) {
       console.warn('restore failed', err);
-      setDataMsg('복원에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
+      setDataMsg('불러오기에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
     } finally {
       setRestoring(false);
     }
@@ -255,21 +284,118 @@ export function SettingsPage() {
         />
       </SettingsSection>
 
+      {cloudOn && (
+        <SettingsSection
+          title="다른 기기에서도 보기"
+          hint={
+            accountMsg
+              ? accountMsg
+              : authInfo && !authInfo.isAnonymous
+                ? '이 계정으로 어느 기기에서든 같은 기록을 볼 수 있어요.'
+                : accountMode === 'link'
+                  ? '지금 이 기기에 쌓은 기록을 카카오(또는 이메일)에 이어둬요. 그러면 다른 기기·새 기기에서도 똑같이 볼 수 있어요.'
+                  : '예전에 이어둔 적이 있다면, 그 카카오(또는 이메일) 계정의 기록을 이 기기로 불러와요.'
+          }
+        >
+          {authInfo && !authInfo.isAnonymous ? (
+            <SettingsRow
+              label={authInfo.email ? `${authInfo.email} 으로 이어져 있어요` : '계정에 이어져 있어요'}
+              right={
+                <Button variant="secondary" size="sm" onClick={handleSignOut} loading={accountBusy}>
+                  로그아웃
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              <div className="settings__rows" style={{ marginBottom: 'var(--space-2)' }}>
+                <Segmented
+                  value={accountMode}
+                  onChange={(v) => {
+                    setAccountMode(v);
+                    setAccountMsg(null);
+                  }}
+                  ariaLabel="계정으로 할 일"
+                  options={[
+                    { value: 'link', label: '기록 이어두기' },
+                    { value: 'restore', label: '쓰던 계정 불러오기' },
+                  ]}
+                />
+              </div>
+              <SettingsRow
+                label="카카오로"
+                right={
+                  <Button variant="primary" size="sm" onClick={handleKakao} loading={accountBusy}>
+                    {accountMode === 'link' ? '카카오로 잇기' : '카카오로 불러오기'}
+                  </Button>
+                }
+              />
+              <SettingsRow
+                label="또는 이메일"
+                right={
+                  <input
+                    type="email"
+                    className="settings__input"
+                    value={emailDraft}
+                    onChange={(e) => setEmailDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && isValidEmail && !accountBusy) void submitAccount();
+                    }}
+                    placeholder="me@example.com"
+                    autoComplete="email"
+                  />
+                }
+              />
+              <SettingsRow
+                label={accountMode === 'link' ? '확인 메일 받기' : '로그인 메일 받기'}
+                right={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={submitAccount}
+                    loading={accountBusy}
+                    disabled={!isValidEmail}
+                  >
+                    메일 보내기
+                  </Button>
+                }
+              />
+            </>
+          )}
+        </SettingsSection>
+      )}
+
       <SettingsSection
         title="알림"
-        hint="설정한 시간대에 부드러운 알림이 와요. (현재는 시간 선택만 — 실제 발송은 후속에서 연결돼요.)"
+        hint={
+          notifMsg
+            ? notifMsg
+            : notifOn
+              ? '그날 아직 결을 안 남겼을 때만, 고른 시간에 한 번 부드럽게 알려드려요.'
+              : '하루 한 번, 오늘의 결을 잊지 않게 살짝 알려드릴까요? (혼내는 알림은 없어요.)'
+        }
       >
         <SettingsRow
-          label="하루 한 번"
+          label="오늘의 결 알림"
           right={
-            <input
-              type="time"
-              className="settings__time"
-              value={notifTime}
-              onChange={(e) => setNotifTime(e.target.value)}
-            />
+            <Button variant={notifOn ? 'secondary' : 'primary'} size="sm" onClick={toggleNotif}>
+              {notifOn ? '끄기' : '켜기'}
+            </Button>
           }
         />
+        {notifOn && (
+          <SettingsRow
+            label="알림 시간"
+            right={
+              <input
+                type="time"
+                className="settings__time"
+                value={notifTime}
+                onChange={(e) => changeNotifTime(e.target.value)}
+              />
+            }
+          />
+        )}
       </SettingsSection>
 
       <section className="settings__section">
@@ -309,16 +435,23 @@ export function SettingsPage() {
         title="데이터"
         hint={
           exporting
-            ? '사진·영상 원본까지 담아 파일을 만드는 중이에요…'
+            ? '사진·영상까지 담아 ZIP 파일을 만드는 중이에요…'
             : backingUp
-              ? '사진·영상 원본까지 클라우드에 올리는 중이에요…'
+              ? '클라우드에 안전하게 올리는 중이에요…'
               : restoring
-                ? '클라우드에서 결을 되살리는 중이에요…'
+                ? '클라우드에서 기록을 불러오는 중이에요…'
                 : dataMsg
                   ? dataMsg
-                  : `${fragments.length}개의 결, ${spaces.length}개의 공간이 저장돼 있어요. 내 결 내려받기는 늘 무료, 클라우드 백업·복원은 Plus예요.`
+                  : `${fragments.length}개의 결, ${spaces.length}개의 공간이 저장돼 있어요. 결은 남기면 자동으로 안전하게 보관되고(무료), 불러오기도 늘 무료예요. 원본 화질 영구 보관은 공간별 Plus예요.`
         }
       >
+        {cloudOn && (
+          <StorageBar
+            used={personalUsed}
+            total={quotaBytes(personalSpace)}
+            onUpgrade={() => navigate('/plans')}
+          />
+        )}
         <SettingsRow
           label="내 결 내려받기"
           right={
@@ -333,198 +466,45 @@ export function SettingsPage() {
             </Button>
           }
         />
-        <SettingsRow
-          label="백업하기"
-          right={
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setBackupOpen(true)}
-              loading={backingUp}
-              leadingIcon={<CloudUpload size={14} strokeWidth={1.75} aria-hidden />}
-            >
-              공간 선택
-            </Button>
-          }
-        />
-        <SettingsRow
-          label="복원하기"
-          right={
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={openRestore}
-              loading={restoring}
-              leadingIcon={<CloudDownload size={14} strokeWidth={1.75} aria-hidden />}
-            >
-              클라우드에서
-            </Button>
-          }
-        />
+        {cloudOn && (
+          <>
+            <SettingsRow
+              label="지금 백업"
+              right={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleBackupNow}
+                  loading={backingUp}
+                  leadingIcon={<CloudUpload size={14} strokeWidth={1.75} aria-hidden />}
+                >
+                  백업
+                </Button>
+              }
+            />
+            <SettingsRow
+              label="불러오기"
+              right={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleRestore}
+                  loading={restoring}
+                  leadingIcon={<CloudDownload size={14} strokeWidth={1.75} aria-hidden />}
+                >
+                  클라우드에서
+                </Button>
+              }
+            />
+          </>
+        )}
       </SettingsSection>
 
       <SettingsSection title="결에 대해">
         <SettingsRow label="버전" value="0.1.0" />
         <SettingsRow label="태그라인" value="가만히 쌓이는, 보통의 날들." />
       </SettingsSection>
-
-      <BackupSheet
-        open={backupOpen}
-        spaces={spaces}
-        fragments={fragments}
-        onClose={() => setBackupOpen(false)}
-        onSelect={handleSelectSpace}
-      />
-
-      <RestoreSheet
-        open={restoreOpen}
-        list={cloudList}
-        onClose={() => setRestoreOpen(false)}
-        onSelect={handleSelectRestore}
-      />
     </div>
-  );
-}
-
-const PLAN_TIER_LABEL: Record<NonNullable<Space['plan']>['tier'], string> = {
-  'plus-personal': 'Plus · 개인',
-  'group-pair': 'Plus · 그룹·페어',
-};
-
-function formatSince(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(
-    d.getDate(),
-  ).padStart(2, '0')}`;
-}
-
-function formatBackedUpAt(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(
-    d.getDate(),
-  ).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-interface BackupSheetProps {
-  open: boolean;
-  spaces: Space[];
-  fragments: { spaceId: string }[];
-  onClose: () => void;
-  onSelect: (space: Space) => void;
-}
-
-function BackupSheet({ open, spaces, fragments, onClose, onSelect }: BackupSheetProps) {
-  const [note, setNote] = useState<string | null>(null);
-  useEffect(() => {
-    if (!open) setNote(null);
-  }, [open]);
-
-  return (
-    <Sheet open={open} title="백업할 공간" onClose={onClose}>
-      <p className="backup-sheet__intro">
-        공간별 플랜과 결제내역을 확인하고, 클라우드에 백업할 공간을 골라요. Plus 플랜이 켜진 공간은 바로 백업돼요.
-      </p>
-      <ul className="backup-sheet__list">
-        {spaces.map((space) => {
-          const count = fragments.filter((f) => f.spaceId === space.id).length;
-          const paid = !!space.plan;
-          return (
-            <li key={space.id}>
-              <button
-                type="button"
-                className="backup-sheet__row"
-                onClick={() =>
-                  paid
-                    ? onSelect(space)
-                    : setNote(`‘${space.name}’은 아직 무료 플랜이에요. 백업은 Plus 플랜에서 곧 열려요.`)
-                }
-              >
-                <span className="backup-sheet__main">
-                  <span className="backup-sheet__name">
-                    {space.name}
-                    <span className="backup-sheet__count"> · 결 {count}개</span>
-                  </span>
-                  <span className="backup-sheet__billing">
-                    {paid ? (
-                      <>
-                        <span className="backup-sheet__badge backup-sheet__badge--paid">
-                          {PLAN_TIER_LABEL[space.plan!.tier]}
-                        </span>
-                        <span className="backup-sheet__billing-detail">
-                          {space.plan!.priceLabel} · {formatSince(space.plan!.since)}부터 이용 중
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="backup-sheet__badge">무료 플랜</span>
-                        <span className="backup-sheet__billing-detail">
-                          백업은 플랜에서 열려요
-                        </span>
-                      </>
-                    )}
-                  </span>
-                </span>
-                <span className="backup-sheet__action" aria-hidden>
-                  {paid ? (
-                    <CloudUpload size={16} strokeWidth={1.75} />
-                  ) : (
-                    <Lock size={15} strokeWidth={1.75} />
-                  )}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {note && <p className="backup-sheet__note">{note}</p>}
-    </Sheet>
-  );
-}
-
-interface RestoreSheetProps {
-  open: boolean;
-  list: CloudBackupSummary[] | null;
-  onClose: () => void;
-  onSelect: (summary: CloudBackupSummary) => void;
-}
-
-function RestoreSheet({ open, list, onClose, onSelect }: RestoreSheetProps) {
-  return (
-    <Sheet open={open} title="클라우드에서 복원" onClose={onClose}>
-      <p className="backup-sheet__intro">
-        클라우드에 백업된 공간을 골라 되살려요. 사진·영상 원본까지 함께 복원돼요.
-      </p>
-      {list === null ? (
-        <p className="backup-sheet__placeholder">클라우드를 확인하는 중이에요…</p>
-      ) : list.length === 0 ? (
-        <p className="backup-sheet__placeholder">아직 클라우드에 백업된 공간이 없어요.</p>
-      ) : (
-        <ul className="backup-sheet__list">
-          {list.map((b) => (
-            <li key={b.spaceId}>
-              <button type="button" className="backup-sheet__row" onClick={() => onSelect(b)}>
-                <span className="backup-sheet__main">
-                  <span className="backup-sheet__name">
-                    {b.spaceName}
-                    <span className="backup-sheet__count"> · 결 {b.count}개</span>
-                  </span>
-                  <span className="backup-sheet__billing">
-                    <span className="backup-sheet__billing-detail">
-                      {formatBackedUpAt(b.backedUpAt)} 백업
-                    </span>
-                  </span>
-                </span>
-                <span className="backup-sheet__action" aria-hidden>
-                  <CloudDownload size={16} strokeWidth={1.75} />
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Sheet>
   );
 }
 

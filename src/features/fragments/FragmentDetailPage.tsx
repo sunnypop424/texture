@@ -4,6 +4,8 @@ import { ChevronLeft, Pencil, Trash2, Camera, Video, Mic, Quote } from 'lucide-r
 import { useFragmentStore } from '../../lib/fragmentStore';
 import { useSpaceStore } from '../../lib/spaceStore';
 import { useToastStore } from '../../lib/toastStore';
+import { enqueueDelete, enqueueUpdate } from '../../lib/syncEngine';
+import { useMediaUrl } from '../../lib/useMediaUrl';
 import { CaptureSheet, type CaptureDraft } from '../../components/CaptureSheet';
 import { ConfirmSheet } from '../../components/ConfirmSheet';
 import { PhotoViewer } from '../../components/PhotoViewer';
@@ -57,6 +59,8 @@ export function FragmentDetailPage() {
       .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
   }, [fragments, fragment]);
 
+  const mediaUrl = useMediaUrl(fragment); // 클라우드에만 있으면 이때 받아옴(지연 로드)
+
   if (!fragment) {
     return (
       <div className="stack-4">
@@ -79,29 +83,35 @@ export function FragmentDetailPage() {
       title: draft.title,
     };
     if (draft.mediaBlob) {
-      // 새 미디어 → 기존 blob 정리 후 새로 저장
+      // 새 미디어 → 기존 blob 정리 후 새로 저장. mediaPath를 비워 동기화가 새 원본을 올리게 함.
       if (fragment.hasLocalMedia) await removeMedia(fragment.id);
       patch.thumbUrl = await saveMedia(fragment.id, draft.mediaBlob);
       patch.hasLocalMedia = true;
+      patch.mediaPath = undefined;
+      patch.bytes = draft.mediaBlob.size;
     } else if (!draft.previewUrl) {
-      // 미디어 제거됨 (다시 선택 후 캔슬 등)
+      // 미디어 제거됨 (다시 선택 후 캔슬 등). mediaPath는 유지 → 동기화가 서버 객체를 지움.
       if (fragment.hasLocalMedia) await removeMedia(fragment.id);
       patch.thumbUrl = undefined;
       patch.hasLocalMedia = false;
+      patch.bytes = undefined;
     }
     // 미디어 그대로 유지 (draft.previewUrl 있고 blob 없음) → thumbUrl 안 건드림
     updateFragment(fragment.id, patch);
+    void enqueueUpdate(fragment.id); // 수정 내용을 서버에도 반영
     setEditOpen(false);
   };
 
   const handleDelete = () => {
+    // 서버에도 반영되도록 삭제 대기열에 넣고(있다면 미디어 경로 포함) 로컬에서 비운다.
+    void enqueueDelete({ id: fragment.id, spaceId: fragment.spaceId, mediaPath: fragment.mediaPath });
     removeFragment(fragment.id);
     setConfirmOpen(false);
     navigate(-1);
     showToast('결을 비웠어요');
   };
 
-  const canViewFull = fragment.type === 'photo' && !!fragment.thumbUrl;
+  const canViewFull = fragment.type === 'photo' && !!mediaUrl;
 
   return (
     <div className="stack-4">
@@ -121,15 +131,15 @@ export function FragmentDetailPage() {
           if (canViewFull && e.key === 'Enter') setViewerOpen(true);
         }}
       >
-        {fragment.thumbUrl ? (
+        {mediaUrl ? (
           fragment.type === 'video' ? (
-            <video src={fragment.thumbUrl} controls />
+            <video src={mediaUrl} controls />
           ) : fragment.type === 'voice' ? (
             <div className="detail-media__voice">
-              <audio src={fragment.thumbUrl} controls />
+              <audio src={mediaUrl} controls />
             </div>
           ) : (
-            <img src={fragment.thumbUrl} alt="" />
+            <img src={mediaUrl} alt="" />
           )
         ) : (
           <div className="detail-media__placeholder" aria-hidden>
@@ -184,7 +194,7 @@ export function FragmentDetailPage() {
         initialDraft={{
           type: fragment.type,
           title: fragment.title,
-          previewUrl: fragment.thumbUrl,
+          previewUrl: mediaUrl,
         }}
         onClose={() => setEditOpen(false)}
         onSave={handleEdit}
@@ -204,7 +214,7 @@ export function FragmentDetailPage() {
       {canViewFull && (
         <PhotoViewer
           open={viewerOpen}
-          src={fragment.thumbUrl!}
+          src={mediaUrl!}
           alt={fragment.title}
           onClose={() => setViewerOpen(false)}
         />

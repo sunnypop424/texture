@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DayHeader } from '../../components/DayHeader';
 import { PromptChip } from '../../components/PromptChip';
 import { CaptureEntry } from '../../components/CaptureEntry';
@@ -16,6 +16,7 @@ import { useOnboarding } from '../../lib/useOnboarding';
 import { getCurrentUser } from '../../lib/identity';
 import { saveMedia } from '../../lib/mediaStore';
 import { getTodayDate, getTodayKey, nowIsoLocal } from '../../lib/today';
+import { syncReminder } from '../../lib/notifications';
 import type { Fragment, MediaType } from '../../types/fragment';
 
 export function TodayPage() {
@@ -29,6 +30,11 @@ export function TodayPage() {
   const activeSpaceId = useSpaceStore((s) => s.activeSpaceId);
 
   const { onboarded, markOnboarded } = useOnboarding();
+  // 기록이 하나라도 있으면(복원 등) 신규 사용자가 아니다 → 환영 화면 대신 평소 화면.
+  const totalFragments = useFragmentStore((s) => s.fragments.length);
+  useEffect(() => {
+    if (!onboarded && totalFragments > 0) markOnboarded();
+  }, [onboarded, totalFragments, markOnboarded]);
   // 프롬프트는 항상 진입(새로고침)마다 무작위. dismiss하면 그날은 안 뜸.
   const { prompt, dismiss } = useDailyPrompt(todayKey, { random: true });
 
@@ -65,12 +71,14 @@ export function TodayPage() {
       dayDate: todayKey,
       thumbUrl,
       hasLocalMedia: hasLocalMedia || undefined,
+      bytes: draft.mediaBlob?.size,
       spaceId: activeSpaceId,
       authorId: me.id,
     };
     addFragment(next);
     setSheetOpen(false);
     setSavedMsg('오늘의 결을 남겼어요');
+    void syncReminder(); // 오늘 남겼으니 알림은 내일로
     if (!onboarded) markOnboarded();
   };
 

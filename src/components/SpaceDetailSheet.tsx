@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LogOut, Send, X as XIcon } from 'lucide-react';
 import { Sheet } from './Sheet';
 import { ConfirmSheet } from './ConfirmSheet';
+import { StorageBar } from './StorageBar';
 import { useSpaceStore } from '../lib/spaceStore';
 import { useIdentityStore } from '../lib/identity';
 import { useFragmentStore } from '../lib/fragmentStore';
+import { quotaBytes } from '../lib/plan';
+import {
+  leaveSpaceRemote, closeSpaceRemote, removeMemberRemote, updateMyMemberName,
+} from '../lib/sharing';
 
 interface SpaceDetailSheetProps {
   open: boolean;
@@ -24,9 +30,21 @@ export function SpaceDetailSheet({ open, spaceId, onClose, onInvite }: SpaceDeta
   const leaveSpace = useSpaceStore((s) => s.leaveSpace);
   const closeSpace = useSpaceStore((s) => s.closeSpace);
   const removeMember = useSpaceStore((s) => s.removeMember);
+  const setMyNameInSpace = useSpaceStore((s) => s.setMyNameInSpace);
   const fragments = useFragmentStore((s) => s.fragments);
+  const navigate = useNavigate();
 
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const usedBytes = fragments.reduce(
+    (sum, f) => (f.spaceId === spaceId ? sum + (f.bytes ?? 0) : sum),
+    0,
+  );
+
+  const myMemberName = space?.members.find((m) => m.userId === me.id)?.displayName ?? me.displayName;
+  const [nameDraft, setNameDraft] = useState(myMemberName);
+  useEffect(() => {
+    setNameDraft(myMemberName);
+  }, [myMemberName, open]);
 
   if (!space) {
     // 공간이 store에서 사라진 경우 (방금 닫음·떠남) — Sheet도 닫혀야 함
@@ -41,18 +59,58 @@ export function SpaceDetailSheet({ open, spaceId, onClose, onInvite }: SpaceDeta
 
   const handleConfirm = () => {
     if (!confirm) return;
-    if (confirm.type === 'leave') leaveSpace(spaceId);
-    else if (confirm.type === 'close') closeSpace(spaceId);
-    else if (confirm.type === 'remove') removeMember(spaceId, confirm.userId);
+    // 서버에도 반영(공유 공간은 로컬 id가 곧 서버 id). 배경에서 처리.
+    if (confirm.type === 'leave') {
+      void leaveSpaceRemote(spaceId);
+      leaveSpace(spaceId);
+    } else if (confirm.type === 'close') {
+      void closeSpaceRemote(spaceId);
+      closeSpace(spaceId);
+    } else if (confirm.type === 'remove') {
+      void removeMemberRemote(spaceId, confirm.userId);
+      removeMember(spaceId, confirm.userId);
+    }
 
     const shouldClose = confirm.type !== 'remove';
     setConfirm(null);
     if (shouldClose) onClose();
   };
 
+  const commitMyName = () => {
+    const trimmed = nameDraft.trim();
+    if (!trimmed || trimmed === myMemberName) {
+      setNameDraft(myMemberName);
+      return;
+    }
+    setMyNameInSpace(spaceId, trimmed);
+    void updateMyMemberName(spaceId, trimmed); // 다른 멤버에게도 이 이름으로 보이게
+  };
+
   return (
     <>
       <Sheet open={open} title={space.name} onClose={onClose}>
+        <section className="space-detail__section">
+          <h3 className="space-detail__section-title">이 공간에서 내 이름</h3>
+          <input
+            type="text"
+            className="create-space__input"
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitMyName}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              if (e.key === 'Escape') {
+                setNameDraft(myMemberName);
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            maxLength={20}
+            placeholder="이름"
+          />
+        </section>
+
+        <div className="space-list__divider" />
+
         <section className="space-detail__section">
           <h3 className="space-detail__section-title">멤버 {space.members.length}</h3>
           <div className="member-list">
@@ -92,6 +150,20 @@ export function SpaceDetailSheet({ open, spaceId, onClose, onInvite }: SpaceDeta
               );
             })}
           </div>
+        </section>
+
+        <div className="space-list__divider" />
+
+        <section className="space-detail__section">
+          <h3 className="space-detail__section-title">용량</h3>
+          <StorageBar
+            used={usedBytes}
+            total={quotaBytes(space)}
+            onUpgrade={() => {
+              onClose();
+              navigate('/plans');
+            }}
+          />
         </section>
 
         <div className="space-list__divider" />

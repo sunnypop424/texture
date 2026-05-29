@@ -49,6 +49,7 @@ export interface SpaceMemberRow {
   user_id: string;
   role: 'owner' | 'member';
   joined_at: string;
+  display_name?: string | null;
 }
 
 export function toSpaceMemberRow(
@@ -60,6 +61,7 @@ export function toSpaceMemberRow(
     user_id: member.userId,
     role: member.role,
     joined_at: member.joinedAt,
+    display_name: member.displayName || null,
   };
 }
 
@@ -75,6 +77,7 @@ export interface FragmentRow {
   captured_at: string;
   day_date: string;
   backfilled: boolean;
+  bytes: number | null;
   created_at?: string;
 }
 
@@ -94,5 +97,48 @@ export function toFragmentRow(f: Fragment, serverSpaceId: string): FragmentRow {
     captured_at: f.capturedAt,
     day_date: f.dayDate,
     backfilled: f.backfilled ?? false,
+    bytes: f.bytes ?? null,
+  };
+}
+
+/**
+ * 서버 row → 앱 Fragment (내려받기용).
+ * @param localSpaceId  서버 space_id를 로컬 id로 매핑한 값(개인 공간은 'personal').
+ * 미디어(thumbUrl/hasLocalMedia)는 호출자가 Storage에서 받아 채운다.
+ */
+export function fromFragmentRow(row: FragmentRow, localSpaceId: string): Fragment {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    capturedAt: row.captured_at,
+    dayDate: row.day_date,
+    mediaPath: row.media_path ?? undefined,
+    bytes: row.bytes ?? undefined,
+    backfilled: row.backfilled || undefined,
+    spaceId: localSpaceId,
+    authorId: row.author_id,
+  };
+}
+
+/** 서버 row → 앱 Space (멤버는 별도로 붙인다). 내려받기용. */
+export function fromSpaceRow(row: SpaceRow, members: SpaceMember[]): Space {
+  return {
+    id: row.id,
+    name: row.name,
+    isPersonal: row.is_personal,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    members,
+  };
+}
+
+/** 서버 row → 앱 SpaceMember. 내려받기용. 이름은 공간별 display_name 우선, 없으면 호출자가 프로필로 보강. */
+export function fromSpaceMemberRow(row: SpaceMemberRow): SpaceMember {
+  return {
+    userId: row.user_id,
+    displayName: row.display_name ?? '',
+    role: row.role,
+    joinedAt: row.joined_at,
   };
 }

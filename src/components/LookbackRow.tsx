@@ -1,5 +1,6 @@
 import { Camera, Video, Mic, Quote } from 'lucide-react';
 import { spaceTagFor } from '../lib/useSpaceColor';
+import { useMediaUrl } from '../lib/useMediaUrl';
 import type { Fragment } from '../types/fragment';
 import type { Space } from '../types/space';
 
@@ -40,10 +41,11 @@ export function LookbackRow({ date, fragments, spaces = [] }: LookbackRowProps) 
 function FragmentThumb({ fragment, spaces }: { fragment: Fragment; spaces: Space[] }) {
   const Icon = ICON[fragment.type];
   const tag = spaceTagFor(spaces.find((s) => s.id === fragment.spaceId));
+  const mediaUrl = useMediaUrl(fragment);
   return (
     <div className="lookback-row__thumb" aria-label={fragment.title}>
-      {fragment.thumbUrl ? (
-        <img src={fragment.thumbUrl} alt="" />
+      {mediaUrl ? (
+        <img src={mediaUrl} alt="" />
       ) : (
         <Icon size={20} strokeWidth={1.5} />
       )}

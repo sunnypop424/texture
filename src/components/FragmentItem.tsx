@@ -3,6 +3,7 @@ import { Camera, Video, Mic, Quote } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSpaceStore } from '../lib/spaceStore';
 import { spaceTagFor } from '../lib/useSpaceColor';
+import { useMediaUrl } from '../lib/useMediaUrl';
 import type { Fragment } from '../types/fragment';
 
 function formatTime(iso: string): string {
@@ -32,6 +33,7 @@ interface FragmentItemProps {
 export function FragmentItem({ fragment, pending = false, appear = false, onOpen }: FragmentItemProps) {
   const Icon = ICON[fragment.type];
   const navigate = useNavigate();
+  const mediaUrl = useMediaUrl(fragment);
 
   const spaces = useSpaceStore((s) => s.spaces);
   const activeId = useSpaceStore((s) => s.activeSpaceId);
@@ -66,8 +68,8 @@ export function FragmentItem({ fragment, pending = false, appear = false, onOpen
       }}
     >
       <div className="fragment__thumb" aria-hidden>
-        {fragment.thumbUrl ? (
-          <img src={fragment.thumbUrl} alt="" />
+        {mediaUrl ? (
+          <img src={mediaUrl} alt="" />
         ) : (
           <Icon size={18} strokeWidth={1.5} />
         )}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Sheet } from './Sheet';
 import { Button } from './Button';
 import { useSpaceStore } from '../lib/spaceStore';
+import { useIdentityStore } from '../lib/identity';
 
 interface CreateSpaceSheetProps {
   open: boolean;
@@ -11,18 +12,23 @@ interface CreateSpaceSheetProps {
 
 export function CreateSpaceSheet({ open, onClose, onCreated }: CreateSpaceSheetProps) {
   const [name, setName] = useState('');
+  const myName = useIdentityStore((s) => s.user.displayName);
+  const [memberName, setMemberName] = useState(myName);
   const createSpace = useSpaceStore((s) => s.createSpace);
   const setActive = useSpaceStore((s) => s.setActiveSpace);
 
   useEffect(() => {
-    if (open) setName('');
-  }, [open]);
+    if (open) {
+      setName('');
+      setMemberName(myName);
+    }
+  }, [open, myName]);
 
-  const canCreate = name.trim().length > 0;
+  const canCreate = name.trim().length > 0 && memberName.trim().length > 0;
 
   const handleCreate = () => {
     if (!canCreate) return;
-    const space = createSpace(name.trim());
+    const space = createSpace(name.trim(), memberName.trim());
     setActive(space.id);
     onCreated(space.id);
   };
@@ -54,6 +60,17 @@ export function CreateSpaceSheet({ open, onClose, onCreated }: CreateSpaceSheetP
             onChange={(e) => setName(e.target.value)}
             maxLength={20}
             autoFocus
+          />
+        </label>
+        <label className="create-space__field">
+          <span className="create-space__label">이 공간에서 쓸 이름</span>
+          <input
+            type="text"
+            className="create-space__input"
+            placeholder="이 공간의 다른 사람에게 보여요"
+            value={memberName}
+            onChange={(e) => setMemberName(e.target.value)}
+            maxLength={20}
           />
         </label>
         <p className="create-space__hint">

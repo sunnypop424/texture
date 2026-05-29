@@ -17,9 +17,11 @@ interface ComparisonRow {
 
 const COMPARISON: ComparisonRow[] = [
   { label: '매일 기록·전 매체', free: '무제한', plus: '무제한' },
+  { label: '공유 공간', free: '함께 쓰기 무료', plus: '추가 용량·원본 화질' },
+  { label: '백업·복원', free: '무료', plus: '무료' },
+  { label: '보관 용량', free: '기본 제공', plus: '대용량·추가 구매' },
+  { label: '미디어 화질', free: '표준 화질', plus: '원본 화질 영구' },
   { label: '캘린더·주간 회고', free: '기본', plus: '심화 (연간 회고, 검색·태그)' },
-  { label: '미디어 보관', free: '표준 화질', plus: '원본 화질 영구' },
-  { label: '공유방', free: '1팀 (최대 3인)', plus: '무제한 (최대 6인)' },
   { label: '자동 영상 내보내기', free: '—', plus: 'HD' },
   { label: '1년 전 오늘·테마', free: '—', plus: '포함' },
 ];
@@ -51,6 +53,10 @@ export function PlansPage() {
       </header>
 
       <FreeForeverHero />
+
+      <p className="plans-perspace-note">
+        Plus는 <strong>공간마다 따로</strong> 켜요. 백업·원본 보관이 필요한 공간만 골라 구매하면 돼요 — 다른 공간은 무료 그대로.
+      </p>
 
       <PlusPersonalCard />
 

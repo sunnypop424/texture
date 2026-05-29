@@ -55,6 +55,127 @@ export function ensureAnonymousSession(): Promise<string | null> {
   return sessionPromise;
 }
 
+export interface AuthInfo {
+  uid: string | null;
+  email: string | null;
+  /** 익명(이메일 미연결) 여부. 클라우드 미설정이면 true 취급. */
+  isAnonymous: boolean;
+}
+
+/** 현재 세션의 계정 상태 — 설정 화면에서 "익명 / 이메일 연결됨"을 보여주기 위함. */
+export async function getAuthInfo(): Promise<AuthInfo> {
+  const supabase = getSupabase();
+  if (!supabase) return { uid: null, email: null, isAnonymous: true };
+  try {
+    const { data } = await supabase.auth.getUser();
+    const u = data.user;
+    return {
+      uid: u?.id ?? null,
+      email: u?.email ?? null,
+      isAnonymous: u?.is_anonymous ?? !u?.email,
+    };
+  } catch {
+    return { uid: null, email: null, isAnonymous: true };
+  }
+}
+
+interface AuthActionResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * 현재 익명 계정에 이메일을 연결(저장)한다. 같은 uid를 유지하므로 기존 결이 그대로
+ * 그 이메일 계정의 것이 된다. 확인 메일의 링크를 누르면 연결이 완료된다.
+ */
+export async function linkEmail(email: string): Promise<AuthActionResult> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: '클라우드가 연결돼 있지 않아요.' };
+  try {
+    const { error } = await supabase.auth.updateUser({ email });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : '알 수 없는 오류' };
+  }
+}
+
+/**
+ * 다른 기기에서 쓰던 계정으로 로그인(매직 링크). 메일의 링크를 누르면 그 계정으로
+ * 전환되고, 내려받기로 아카이브가 복원된다.
+ */
+export async function signInWithEmail(email: string): Promise<AuthActionResult> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: '클라우드가 연결돼 있지 않아요.' };
+  try {
+    const emailRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo } });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : '알 수 없는 오류' };
+  }
+}
+
+/**
+ * 카카오로 "잇기" — 현재 익명 계정에 카카오를 연결(link)한다. 같은 uid 유지라 기존 결이
+ * 그대로 그 카카오 계정의 것이 된다. (부모님 등 이메일이 어려운 사용자를 위한 1급 경로.)
+ * 카카오 페이지로 이동했다가 돌아온다.
+ */
+export async function linkKakao(): Promise<AuthActionResult> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: '클라우드가 연결돼 있지 않아요.' };
+  try {
+    const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+    const { error } = await supabase.auth.linkIdentity({ provider: 'kakao', options: { redirectTo } });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : '알 수 없는 오류' };
+  }
+}
+
+/**
+ * 카카오로 "불러오기" — 다른 기기에서 쓰던 카카오 계정으로 로그인. 그 계정의 아카이브가
+ * 내려받기(pull)로 복원된다.
+ */
+export async function signInWithKakao(): Promise<AuthActionResult> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: '클라우드가 연결돼 있지 않아요.' };
+  try {
+    const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'kakao', options: { redirectTo } });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : '알 수 없는 오류' };
+  }
+}
+
+/** 로그아웃 — 세션을 비운다. 로컬에 저장된 결은 그대로 남는다(과거 열람은 항상 무료). */
+export async function signOutCloud(): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.auth.signOut();
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * 세션 사용자(uid) 변화를 구독한다. 매직 링크 로그인 등으로 계정이 바뀌면 콜백한다.
+ * @returns 구독 해제 함수.
+ */
+export function onAuthUserChange(cb: (uid: string | null) => void): () => void {
+  const supabase = getSupabase();
+  if (!supabase) return () => {};
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    cb(session?.user?.id ?? null);
+  });
+  return () => data.subscription.unsubscribe();
+}
+
 /**
  * 사용자 프로필(표시 이름)을 서버에 반영. 멱등(upsert).
  * 실패해도 조용히 넘어간다 — 로컬 정체성이 source of truth다.

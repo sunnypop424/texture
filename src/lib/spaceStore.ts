@@ -41,10 +41,10 @@ function readActive(): string | null {
 }
 
 function randomToken(): string {
-  return (
-    Math.random().toString(36).slice(2, 10) +
-    Math.random().toString(36).slice(2, 10)
-  );
+  // 추측 불가한 토큰(crypto). Math.random은 예측 가능해 초대 무단 합류 위험이 있었다.
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 interface SpaceStoreState {
@@ -59,9 +59,15 @@ interface SpaceStoreState {
   hydrate: () => Promise<void>;
   setActiveSpace: (id: string) => void;
   setViewSpace: (id: string) => void;
-  createSpace: (name: string) => Space;
+  createSpace: (name: string, memberName?: string) => Space;
   /** 백업 복원용 — 같은 id의 공간이 없을 때만 그대로 추가. 이미 있으면 기존 것을 보존. */
   importSpace: (space: Space) => void;
+  /** 내려받기용 — 서버의 공간을 반영. 없으면 추가, 있으면 이름·멤버를 갱신(멤버 변동 반영). */
+  mergeRemoteSpace: (space: Space) => void;
+  /** 내려받기용 — 서버에서 사라진(지워졌거나 접근 잃은) 공유 공간을 로컬에서 제거. 결은 별도 처리. */
+  dropSpace: (spaceId: string) => void;
+  /** 이 공간에서만 내 표시 이름을 바꾼다(공간별 이름). 전역 이름과 별개. */
+  setMyNameInSpace: (spaceId: string, name: string) => void;
   updateMemberDisplayName: (userId: string, name: string) => void;
   /** 익명 세션 확보 시 'me'로 남긴 createdBy·members.userId·invites.invitedBy를 실제 uid로 일괄 치환. */
   remapUser: (oldId: string, newId: string) => void;
@@ -150,10 +156,11 @@ export const useSpaceStore = create<SpaceStoreState>((set, get) => ({
     set({ viewSpaceId: id });
   },
 
-  createSpace: (name) => {
+  createSpace: (name, memberName) => {
     const me = getCurrentUser();
     const now = new Date().toISOString();
     const color = pickNextHue(get().spaces);
+    const myName = memberName?.trim() || me.displayName; // 이 공간에서 쓸 이름
     const newSpace: Space = {
       // 오프라인 우선 — 클라이언트가 UUID를 발급해 그대로 DB PK로 쓴다.
       id: crypto.randomUUID(),
@@ -163,7 +170,7 @@ export const useSpaceStore = create<SpaceStoreState>((set, get) => ({
       createdAt: now,
       color,
       members: [
-        { userId: me.id, displayName: me.displayName, role: 'owner', joinedAt: now },
+        { userId: me.id, displayName: myName, role: 'owner', joinedAt: now },
       ],
     };
     set((s) => {
@@ -179,6 +186,61 @@ export const useSpaceStore = create<SpaceStoreState>((set, get) => ({
     set((s) => {
       if (s.spaces.some((sp) => sp.id === space.id)) return s;
       const spaces = [...s.spaces, space];
+      persistSpaces(spaces);
+      return { spaces };
+    });
+  },
+
+  mergeRemoteSpace: (space) => {
+    if (!space || !space.id) return;
+    set((s) => {
+      const idx = s.spaces.findIndex((sp) => sp.id === space.id);
+      if (idx === -1) {
+        const spaces = [...s.spaces, space];
+        persistSpaces(spaces);
+        return { spaces };
+      }
+      const existing = s.spaces[idx];
+      // 멤버는 서버 기준으로 갱신하되, 이름은 비어 있으면 로컬에 알던 이름을 보존.
+      const members = space.members.map((m) => {
+        const local = existing.members.find((lm) => lm.userId === m.userId);
+        return { ...m, displayName: m.displayName || local?.displayName || '' };
+      });
+      const updated: Space = { ...existing, name: space.name, members };
+      const spaces = s.spaces.map((sp, i) => (i === idx ? updated : sp));
+      persistSpaces(spaces);
+      return { spaces };
+    });
+  },
+
+  dropSpace: (spaceId) => {
+    const space = get().spaces.find((s) => s.id === spaceId);
+    if (!space || space.isPersonal) return;
+    const spaces = get().spaces.filter((s) => s.id !== spaceId);
+    const invites = get().invites.filter((i) => i.spaceId !== spaceId);
+    set({ spaces, invites });
+    persistSpaces(spaces);
+    persistInvites(invites);
+    if (get().activeSpaceId === spaceId) get().setActiveSpace(PERSONAL_SPACE_ID);
+    if (get().viewSpaceId === spaceId) get().setViewSpace(ALL_SPACES_ID);
+  },
+
+  setMyNameInSpace: (spaceId, name) => {
+    const me = getCurrentUser();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    set((s) => {
+      let changed = false;
+      const spaces = s.spaces.map((sp) => {
+        if (sp.id !== spaceId) return sp;
+        const members = sp.members.map((m) => {
+          if (m.userId !== me.id || m.displayName === trimmed) return m;
+          changed = true;
+          return { ...m, displayName: trimmed };
+        });
+        return { ...sp, members };
+      });
+      if (!changed) return s;
       persistSpaces(spaces);
       return { spaces };
     });

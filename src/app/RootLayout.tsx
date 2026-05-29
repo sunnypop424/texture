@@ -9,10 +9,11 @@ import { useSpaceStore } from '../lib/spaceStore';
 import { useIdentityStore, getCurrentUser } from '../lib/identity';
 import { useOnlineStatus } from '../lib/useOnlineStatus';
 import { useSync } from '../lib/useSync';
-import { requestSync } from '../lib/syncEngine';
+import { requestSync, pullFromCloud } from '../lib/syncEngine';
 import { isCloudEnabled } from '../lib/supabase';
-import { ensureAnonymousSession, upsertProfile } from '../lib/auth';
+import { ensureAnonymousSession, upsertProfile, onAuthUserChange } from '../lib/auth';
 import { runIdentityMigration } from '../lib/identityMigration';
+import { syncReminder } from '../lib/notifications';
 
 export function RootLayout() {
   const hydrateFragments = useFragmentStore((s) => s.hydrate);
@@ -26,6 +27,7 @@ export function RootLayout() {
   useEffect(() => {
     void hydrateFragments();
     void hydrateSpaces();
+    void syncReminder(); // 앱 열 때 오늘 상태에 맞춰 알림 재예약(미등록 시에만)
   }, [hydrateFragments, hydrateSpaces]);
 
   // 배경에서 조용히 익명 세션 확보 → 'me'로 남긴 기록을 실제 uid로 전환.
@@ -40,12 +42,24 @@ export function RootLayout() {
       runIdentityMigration(uid);
       void upsertProfile(uid, getCurrentUser().displayName);
       requestSync(); // uid로 전환된 과거 결을 바로 올린다
+      void pullFromCloud(); // 서버에 있는 내 아카이브를 내려받아 병합(새 기기 복원)
     })().catch((err) => {
       console.warn('초기 동기화 준비 실패 — 로컬로 계속', err);
     });
     return () => {
       cancelled = true;
     };
+  }, [setAuthUser]);
+
+  // 매직 링크 로그인 등으로 계정(uid)이 바뀌면 그 계정으로 전환 + 아카이브 내려받기.
+  useEffect(() => {
+    if (!isCloudEnabled()) return;
+    return onAuthUserChange((uid) => {
+      if (!uid || uid === useIdentityStore.getState().user.id) return;
+      setAuthUser(uid);
+      void pullFromCloud(); // 로그인한 계정의 결을 복원
+      requestSync();
+    });
   }, [setAuthUser]);
 
   const ready = fragmentsReady && spacesReady;

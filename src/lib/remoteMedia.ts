@@ -25,3 +25,31 @@ export async function uploadMedia(
   if (error) throw error;
   return path;
 }
+
+/**
+ * Storage에서 미디어 원본 blob을 받는다(내려받기용).
+ * 받은 blob은 호출자가 mediaStore에 저장해 로컬 미디어처럼 다룬다(만료 없는 복원).
+ * @returns blob, 실패 시 null.
+ */
+export async function downloadMedia(path: string): Promise<Blob | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.storage.from(BUCKET).download(path);
+    if (error || !data) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/** Storage에서 미디어 객체를 지운다(결 삭제 동기화용). 실패해도 조용히 넘어간다(best-effort). */
+export async function deleteMedia(path: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.storage.from(BUCKET).remove([path]);
+  } catch {
+    // best-effort — 행 삭제가 본질, 객체는 나중에 정리돼도 무방
+  }
+}

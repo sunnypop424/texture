@@ -13,6 +13,7 @@ import { useViewSpaceFragments } from '../../lib/useViewSpaceFragments';
 import { getCurrentUser } from '../../lib/identity';
 import { saveMedia } from '../../lib/mediaStore';
 import { getTodayDate, getTodayKey, nowIsoLocal, parseDayKey } from '../../lib/today';
+import { syncReminder } from '../../lib/notifications';
 import type { Fragment, MediaType } from '../../types/fragment';
 
 export function DailyPage() {
@@ -83,6 +84,7 @@ export function DailyPage() {
       dayDate,
       thumbUrl,
       hasLocalMedia: hasLocalMedia || undefined,
+      bytes: draft.mediaBlob?.size,
       backfilled: isToday ? undefined : true,
       spaceId: activeSpaceId,
       authorId: me.id,
@@ -90,6 +92,7 @@ export function DailyPage() {
     addFragment(next);
     setSheetOpen(false);
     setSavedMsg(isToday ? '오늘의 결을 남겼어요' : '이 날에 결을 담았어요');
+    void syncReminder();
   };
 
   return (
