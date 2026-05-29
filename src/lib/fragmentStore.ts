@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { get as idbGet, set as idbSet } from 'idb-keyval';
-import { initialFragments } from '../data/mockFragments';
 import { PERSONAL_SPACE_ID } from '../data/initialSpaces';
 import { loadMediaUrl, removeMedia } from './mediaStore';
 import type { Fragment } from '../types/fragment';
 
-const STORAGE_KEY = 'jogak:fragments:v1';
+// v3: 가상/시드 데이터를 전부 제거하며 이전 캐시(가짜 결 포함)를 폐기. 네임스페이스도 gyeol:로 통일.
+const STORAGE_KEY = 'gyeol:fragments:v3';
 
 interface FragmentStoreState {
   fragments: Fragment[];
@@ -14,6 +14,8 @@ interface FragmentStoreState {
   hydrated: boolean;
   hydrate: () => Promise<void>;
   add: (f: Fragment, options?: { pending?: boolean }) => void;
+  /** 백업 복원용 — 이미 있는 id는 건너뛰고 새 결만 추가. 추가된 개수를 반환. */
+  importFragments: (incoming: Fragment[]) => number;
   update: (id: string, patch: Partial<Omit<Fragment, 'id'>>) => void;
   remove: (id: string) => void;
   markSynced: (id: string) => void;
@@ -60,8 +62,9 @@ export const useFragmentStore = create<FragmentStoreState>((set, get) => ({
         );
         if (needsRepersist) persist(fragments);
       } else {
-        fragments = initialFragments;
-        persist(initialFragments);
+        // 항상 빈 상태에서 시작 — 가상/시드 데이터 없음.
+        fragments = [];
+        persist(fragments);
       }
 
       // 로컬 미디어 보유 fragment들의 신선한 object URL 복원
@@ -82,7 +85,7 @@ export const useFragmentStore = create<FragmentStoreState>((set, get) => ({
       set({ fragments, hydrated: true });
     } catch (err) {
       console.warn('hydrate failed', err);
-      set({ fragments: initialFragments, hydrated: true });
+      set({ fragments: [], hydrated: true });
     }
   },
 
@@ -94,6 +97,20 @@ export const useFragmentStore = create<FragmentStoreState>((set, get) => ({
       persist(fragments);
       return { fragments, pendingIds, recentlyAddedId: f.id };
     });
+  },
+
+  importFragments: (incoming) => {
+    const existing = new Set(get().fragments.map((f) => f.id));
+    const fresh = incoming
+      .filter((f) => f && f.id && !existing.has(f.id))
+      .map(migrate);
+    if (fresh.length === 0) return 0;
+    set((s) => {
+      const fragments = [...fresh, ...s.fragments];
+      persist(fragments);
+      return { fragments };
+    });
+    return fresh.length;
   },
 
   update: (id, patch) => {

@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#F2F4F6" />
     <title>결 — 가만히 쌓이는, 보통의 날들.</title>
+    <script>
+      // 첫 페인트 전에 테마를 적용해 깜빡임 방지.
+      (function () {
+        try {
+          var t = localStorage.getItem('gyeol:theme') || 'system';
+          document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

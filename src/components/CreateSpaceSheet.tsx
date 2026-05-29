@@ -57,7 +57,7 @@ export function CreateSpaceSheet({ open, onClose, onCreated }: CreateSpaceSheetP
           />
         </label>
         <p className="create-space__hint">
-          가까운 사람과 같은 페이지를 비동기로 함께 채우는 공간이에요. 만든 뒤 초대 링크를 전해주세요.
+          가까운 사람과 같은 페이지를 각자 편한 시간에 함께 채우는 공간이에요. 만든 뒤 초대 링크를 전해주세요.
         </p>
       </div>
     </Sheet>

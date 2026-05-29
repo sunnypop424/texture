@@ -7,6 +7,8 @@ import { FragmentDetailPage } from '../features/fragments/FragmentDetailPage';
 import { DailyPage } from '../features/days/DailyPage';
 import { InvitePage } from '../features/invite/InvitePage';
 import { SettingsPage } from '../features/settings/SettingsPage';
+import { PlansPage } from '../features/plans/PlansPage';
+import { SearchPage } from '../features/search/SearchPage';
 
 export const router = createBrowserRouter([
   {
@@ -20,6 +22,8 @@ export const router = createBrowserRouter([
       { path: 'days/:dayDate', element: <DailyPage /> },
       { path: 'invite/:token', element: <InvitePage /> },
       { path: 'settings', element: <SettingsPage /> },
+      { path: 'plans', element: <PlansPage /> },
+      { path: 'search', element: <SearchPage /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },

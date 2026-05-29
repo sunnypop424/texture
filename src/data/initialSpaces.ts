@@ -1,7 +1,6 @@
 import type { Space } from '../types/space';
 
 export const PERSONAL_SPACE_ID = 'personal';
-export const SHARED_DEMO_SPACE_ID = 'shared-demo';
 /** Calendar/Lookback의 기본 뷰 — 모든 공간을 가로질러 '내가 작성한' 결만 보여주는 가상 공간 */
 export const ALL_SPACES_ID = 'all';
 
@@ -29,6 +28,7 @@ export function pickNextHue(existingSpaces: Space[]): string {
   return SPACE_HUES[sharedCount % SPACE_HUES.length];
 }
 
+/** 모든 사용자가 시작하는 상태 — 개인 공간 하나, 결 없음, 결제 없음. */
 export const initialSpaces: Space[] = [
   {
     id: PERSONAL_SPACE_ID,
@@ -38,18 +38,6 @@ export const initialSpaces: Space[] = [
     createdAt: '2026-05-20T00:00:00',
     members: [
       { userId: 'me', displayName: '나', role: 'owner', joinedAt: '2026-05-20T00:00:00' },
-    ],
-  },
-  {
-    id: SHARED_DEMO_SPACE_ID,
-    name: '민지 & 나',
-    isPersonal: false,
-    createdBy: 'me',
-    createdAt: '2026-05-22T00:00:00',
-    color: SPACE_HUES[0], // 황동
-    members: [
-      { userId: 'me', displayName: '나', role: 'owner', joinedAt: '2026-05-22T00:00:00' },
-      { userId: 'minji', displayName: '민지', role: 'member', joinedAt: '2026-05-22T01:00:00' },
     ],
   },
 ];

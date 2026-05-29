@@ -64,4 +64,52 @@
   --column-max: 480px;
   --matte-pad: 14px;
   --tabbar-height: 60px;
+
+  color-scheme: light;
+}
+
+/* ─── Dark theme ───
+   레터페이퍼 톤을 어둠으로 옮긴 'ink paper' 팔레트.
+   순백/순흑 대신 따뜻한 중성 톤, 민트 액센트는 어두운 배경에서 또렷하도록 살짝 밝게.
+   data-theme="dark"(명시) + data-theme="system"(OS가 다크일 때) 둘 다 적용. */
+[data-theme='dark'] {
+  --color-background-primary: #1c1f23; /* 카드/표면 */
+  --color-background-secondary: #0f1113; /* 페이지·매트·입력 well (카드보다 확실히 어둡게) */
+  --color-background-info: #16352b;
+
+  --color-text-primary: #f3f4f5; /* 오프화이트 */
+  --color-text-secondary: #b6bac0;
+  --color-text-tertiary: #868c95;
+  --color-text-info: #45c79a;
+  --color-text-on-accent: #0c1813;
+
+  --color-border-tertiary: #353a41; /* 더 또렷한 분리선 */
+  --color-border-secondary: #4a5059;
+
+  --color-accent: #30c794;
+  --color-accent-press: #24a87c;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme='system'] {
+    --color-background-primary: #1c1f23;
+    --color-background-secondary: #0f1113;
+    --color-background-info: #16352b;
+
+    --color-text-primary: #f3f4f5;
+    --color-text-secondary: #b6bac0;
+    --color-text-tertiary: #868c95;
+    --color-text-info: #45c79a;
+    --color-text-on-accent: #0c1813;
+
+    --color-border-tertiary: #353a41;
+    --color-border-secondary: #4a5059;
+
+    --color-accent: #30c794;
+    --color-accent-press: #24a87c;
+
+    color-scheme: dark;
+  }
 }

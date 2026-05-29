@@ -146,6 +146,19 @@
   transform: scale(0.98);
 }
 
+/* 다크 모드 — 라이트 파스텔 대신, 카테고리 색(--prompt-fg)에서
+   어두운 틴트 배경 + 밝은 글자를 파생해 톤을 맞추고 대비를 확보한다. */
+[data-theme='dark'] .prompt {
+  background: color-mix(in srgb, var(--prompt-fg, var(--color-text-info)) 30%, #1c1f23);
+  color: color-mix(in srgb, var(--prompt-fg, var(--color-text-info)) 50%, #ffffff);
+}
+@media (prefers-color-scheme: dark) {
+  [data-theme='system'] .prompt {
+    background: color-mix(in srgb, var(--prompt-fg, var(--color-text-info)) 30%, #1c1f23);
+    color: color-mix(in srgb, var(--prompt-fg, var(--color-text-info)) 50%, #ffffff);
+  }
+}
+
 /* ─── CaptureEntry ─── */
 .capture {
   width: 100%;
@@ -962,6 +975,9 @@
   background: var(--color-background-primary);
   border-radius: var(--border-radius-sm);
   padding: 6px 10px;
+  width: 150px;
+  box-sizing: border-box;
+  text-align: right;
 }
 .settings__input {
   font-family: var(--font-body);
@@ -972,8 +988,8 @@
   border-radius: var(--border-radius-sm);
   padding: 6px 10px;
   text-align: right;
-  min-width: 0;
-  max-width: 160px;
+  width: 150px;
+  box-sizing: border-box;
   transition: outline-color var(--motion-quick) var(--ease-soft);
 }
 .settings__input::placeholder {
@@ -1005,6 +1021,161 @@
   font-size: var(--type-body);
   line-height: var(--type-body-lh);
   color: var(--color-text-secondary);
+}
+
+/* ─── Weekly recap surfacing card (aha moment on Today) ─── */
+.recap {
+  display: flex;
+  align-items: stretch;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-lg);
+  background: var(--color-background-secondary);
+  overflow: hidden;
+}
+.recap__open {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 4px 14px 16px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font-family: var(--font-body);
+  transition: background var(--motion-quick) var(--ease-soft);
+}
+.recap__open:hover {
+  background: var(--color-background-primary);
+}
+.recap__icon {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-background-primary);
+  color: var(--color-accent);
+}
+.recap__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.recap__label {
+  font-size: var(--type-caption);
+  color: var(--color-text-tertiary);
+}
+.recap__line {
+  font-size: var(--type-body);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.recap__close {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color var(--motion-quick) var(--ease-soft);
+}
+.recap__close:hover {
+  color: var(--color-text-secondary);
+}
+
+/* ─── Calendar top row (space chip + search) ─── */
+/* SpaceChip은 다른 페이지와 동일하게 정상 흐름에 두고,
+   검색 버튼만 absolute로 띄워 칩 위치가 흔들리지 않게 한다. */
+.cal-top {
+  position: relative;
+}
+.cal-top .icon-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.icon-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 50%;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--motion-quick) var(--ease-soft);
+}
+.icon-btn:hover {
+  background: var(--color-background-secondary);
+}
+
+/* ─── Search bar (search page header) ─── */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.search-bar__field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: var(--border-radius-md);
+  background: var(--color-background-secondary);
+  border: 0.5px solid transparent;
+  transition: border-color var(--motion-quick) var(--ease-soft);
+}
+.search-bar__field:focus-within {
+  border-color: var(--color-accent);
+}
+.search-bar__icon {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+}
+.search-bar__input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-family: var(--font-body);
+  font-size: var(--type-body);
+  color: var(--color-text-primary);
+}
+.search-bar__input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* ─── Empty-state inline link ─── */
+.empty__link {
+  display: inline-block;
+  margin-top: 6px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-body);
+  font-size: var(--type-body);
+  color: var(--color-accent);
+  cursor: pointer;
+}
+.empty__link:hover {
+  text-decoration: underline;
 }
 
 /* ─── Empty state ─── */
@@ -1494,6 +1665,14 @@
   padding: 3px;
   gap: 2px;
 }
+/* 설정 테마 선택 — 가로 꽉 채운 3분할 */
+.theme-control .segmented {
+  display: flex;
+}
+.theme-control .segmented__btn {
+  flex: 1;
+  text-align: center;
+}
 .segmented__btn {
   padding: 6px 18px;
   border-radius: 6px;
@@ -1798,4 +1977,320 @@
 /* ─── Pending indicator on FragmentItem ─── */
 .fragment__pending {
   color: var(--color-text-info);
+}
+
+/* ─── Backup sheet (space picker w/ billing) ─── */
+.backup-sheet__intro {
+  font-size: var(--type-body-sm);
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin-bottom: 14px;
+}
+.backup-sheet__placeholder {
+  font-size: var(--type-body-sm);
+  color: var(--color-text-tertiary);
+  text-align: center;
+  padding: var(--space-5) var(--space-4);
+}
+.backup-sheet__note {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--border-radius-md);
+  background: var(--color-background-secondary);
+  font-size: var(--type-body-sm);
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+.backup-sheet__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.backup-sheet__row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: transparent;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+  font-family: var(--font-body);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-quick) var(--ease-soft),
+    border-color var(--motion-quick) var(--ease-soft);
+}
+.backup-sheet__row:hover {
+  background: var(--color-background-secondary);
+  border-color: var(--color-border-secondary);
+}
+.backup-sheet__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.backup-sheet__name {
+  font-size: var(--type-body);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.backup-sheet__count {
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+}
+.backup-sheet__billing {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.backup-sheet__badge {
+  font-size: var(--type-caption);
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
+}
+.backup-sheet__badge--paid {
+  background: var(--color-background-info, var(--color-background-secondary));
+  color: var(--color-text-info);
+  border-color: transparent;
+}
+.backup-sheet__billing-detail {
+  font-size: var(--type-caption);
+  color: var(--color-text-secondary);
+}
+.backup-sheet__action {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  display: inline-flex;
+}
+
+/* ─── Settings row as button ─── */
+.settings__row--button {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  font-family: var(--font-body);
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  transition: background var(--motion-quick) var(--ease-soft);
+}
+.settings__row--button:last-child {
+  border-bottom: 0;
+}
+.settings__row--button:hover {
+  background: var(--color-background-secondary);
+}
+.settings__row--button .settings__right {
+  color: var(--color-text-tertiary);
+}
+
+/* ─── Plans / monetization ─── */
+.plans-hero {
+  border: 0.5px dashed var(--color-border-secondary);
+  border-radius: var(--border-radius-lg);
+  padding: 16px 16px 18px;
+  text-align: center;
+}
+.plans-hero__label {
+  font-size: var(--type-section);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 6px;
+}
+.plans-hero__line {
+  font-size: var(--type-body-sm);
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.plan-card {
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-lg);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.plan-card__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plan-card__title {
+  font-size: var(--type-section);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.plan-card__price {
+  font-size: var(--type-body-sm);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.plan-card__price-main {
+  font-weight: 700;
+}
+.plan-card__price-unit {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+.plan-card__price-sep {
+  color: var(--color-text-tertiary);
+  margin: 0 4px;
+}
+.plan-card__sub {
+  font-size: var(--type-body-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+  margin-top: 4px;
+}
+.plan-card__body {
+  font-size: var(--type-body-sm);
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+.plan-card__body strong {
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+.plan-card__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plan-card__note {
+  font-size: var(--type-caption);
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+.plan-table {
+  display: flex;
+  flex-direction: column;
+  border-top: 0.5px solid var(--color-border-tertiary);
+}
+.plan-table__head,
+.plan-table__row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1.4fr;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  align-items: start;
+}
+.plan-table__head {
+  padding-bottom: 8px;
+}
+.plan-table__cell {
+  font-size: var(--type-meta);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.plan-table__cell--label {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+.plan-table__head .plan-table__cell--label {
+  color: var(--color-text-tertiary);
+}
+.plan-table__cell--free {
+  color: var(--color-text-tertiary);
+}
+.plan-table__cell--plus {
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+.plan-table__head .plan-table__cell--free,
+.plan-table__head .plan-table__cell--plus {
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.plan-feature-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.plan-feature-list__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.plan-feature-list__glyph {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--border-radius-md);
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.plan-feature-list__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plan-feature-list__label {
+  font-size: var(--type-body-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.plan-feature-list__hint {
+  font-size: var(--type-caption);
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+}
+
+.plans-guardrails {
+  border-top: 0.5px solid var(--color-border-tertiary);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.plans-guardrails__title {
+  font-size: var(--type-caption);
+  color: var(--color-text-tertiary);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.plans-guardrails__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.plans-guardrails__list li {
+  font-size: var(--type-body-sm);
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  padding-left: 12px;
+  position: relative;
+}
+.plans-guardrails__list li::before {
+  content: '·';
+  position: absolute;
+  left: 2px;
+  top: 0;
+  color: var(--color-text-tertiary);
 }

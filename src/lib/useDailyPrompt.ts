@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { pickRandomPrompt, type DailyPrompt } from '../data/prompts';
+import { pickPromptForDay, pickRandomPrompt, type DailyPrompt } from '../data/prompts';
 
-const KEY_PREFIX = 'jogak:prompt-dismissed:';
+const KEY_PREFIX = 'gyeol:prompt-dismissed:';
 
 function readDismissed(dayKey: string): boolean {
   if (typeof window === 'undefined') return false;
@@ -25,13 +25,17 @@ export interface UseDailyPromptResult {
   dismiss: () => void;
 }
 
-export function useDailyPrompt(dayKey: string): UseDailyPromptResult {
+export function useDailyPrompt(
+  dayKey: string,
+  options?: { random?: boolean },
+): UseDailyPromptResult {
+  const random = options?.random ?? false;
   const [dismissed, setDismissed] = useState<boolean>(() => readDismissed(dayKey));
 
-  // 새로고침/재진입할 때마다 새 무작위 prompt. dismiss된 날엔 null.
+  // 기본은 하루 고정. random이면 진입(마운트)마다 무작위. dismiss된 날엔 null.
   const prompt = useMemo<DailyPrompt | null>(
-    () => (dismissed ? null : pickRandomPrompt()),
-    [dayKey, dismissed],
+    () => (dismissed ? null : random ? pickRandomPrompt() : pickPromptForDay(dayKey)),
+    [dayKey, dismissed, random],
   );
 
   const dismiss = useCallback(() => {

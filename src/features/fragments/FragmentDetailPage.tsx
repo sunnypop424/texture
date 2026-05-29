@@ -11,17 +11,19 @@ import type { Fragment } from '../../types/fragment';
 
 const ICON = { photo: Camera, video: Video, text: Quote, voice: Mic } as const;
 
+function formatDateOnly(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+}
+
 function formatFull(iso: string): string {
   const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
   const h = d.getHours();
   const min = d.getMinutes();
   const ampm = h < 12 ? '오전' : '오후';
   const hh = h % 12 === 0 ? 12 : h % 12;
   const mm = min.toString().padStart(2, '0');
-  return `${y}년 ${m}월 ${day}일 · ${ampm} ${hh}:${mm}`;
+  return `${formatDateOnly(iso)} · ${ampm} ${hh}:${mm}`;
 }
 
 export function FragmentDetailPage() {
@@ -122,7 +124,9 @@ export function FragmentDetailPage() {
       <div className="stack-2">
         <div className="detail-title">{fragment.title}</div>
         <div className="detail-meta">
-          {formatFull(fragment.capturedAt)}
+          {fragment.backfilled
+            ? `${formatDateOnly(fragment.capturedAt)} · 시간 미상`
+            : formatFull(fragment.capturedAt)}
           {fragmentSpace && !fragmentSpace.isPersonal && fragmentSpace.color && (
             <>
               {' · '}

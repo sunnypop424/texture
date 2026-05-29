@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { DayHeader } from '../../components/DayHeader';
 import { PromptChip } from '../../components/PromptChip';
 import { CaptureEntry } from '../../components/CaptureEntry';
@@ -6,6 +6,7 @@ import { MediaToggle } from '../../components/MediaToggle';
 import { FragmentItem } from '../../components/FragmentItem';
 import { CaptureSheet, type CaptureDraft } from '../../components/CaptureSheet';
 import { SpaceChip } from '../../components/SpaceChip';
+import { WeekRecapCard } from '../../components/WeekRecapCard';
 import { useFragmentStore } from '../../lib/fragmentStore';
 import { useSpaceStore } from '../../lib/spaceStore';
 import { useActiveSpaceFragments } from '../../lib/useActiveSpaceFragments';
@@ -13,38 +14,28 @@ import { useDailyPrompt } from '../../lib/useDailyPrompt';
 import { useOnboarding } from '../../lib/useOnboarding';
 import { getCurrentUser } from '../../lib/identity';
 import { saveMedia } from '../../lib/mediaStore';
+import { getTodayDate, getTodayKey, nowIsoLocal } from '../../lib/today';
 import type { Fragment, MediaType } from '../../types/fragment';
 
-const TODAY = new Date('2026-05-28T00:00:00');
-const TODAY_KEY = '2026-05-28';
-
-function pad(n: number): string {
-  return n.toString().padStart(2, '0');
-}
-
-function nowIsoLocal(): string {
-  const d = new Date();
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
-}
-
 export function TodayPage() {
+  const today = useMemo(() => getTodayDate(), []);
+  const todayKey = useMemo(() => getTodayKey(), []);
+
   const fragments = useActiveSpaceFragments();
   const pendingIds = useFragmentStore((s) => s.pendingIds);
   const recentlyAddedId = useFragmentStore((s) => s.recentlyAddedId);
   const addFragment = useFragmentStore((s) => s.add);
   const activeSpaceId = useSpaceStore((s) => s.activeSpaceId);
 
-  const { prompt, dismiss } = useDailyPrompt(TODAY_KEY);
   const { onboarded, markOnboarded } = useOnboarding();
+  // 온보딩(welcome) 중엔 매 진입마다 무작위, 그 뒤엔 하루 고정.
+  const { prompt, dismiss } = useDailyPrompt(todayKey, { random: !onboarded });
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetType, setSheetType] = useState<MediaType>('photo');
 
   const todays = fragments
-    .filter((f) => f.dayDate === TODAY_KEY)
+    .filter((f) => f.dayDate === todayKey)
     .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
 
   const openCapture = (type: MediaType) => {
@@ -68,7 +59,7 @@ export function TodayPage() {
       type: draft.type,
       title: draft.title,
       capturedAt: nowIsoLocal(),
-      dayDate: TODAY_KEY,
+      dayDate: todayKey,
       thumbUrl,
       hasLocalMedia: hasLocalMedia || undefined,
       spaceId: activeSpaceId,
@@ -82,18 +73,16 @@ export function TodayPage() {
   return (
     <div className="stack-4">
       <SpaceChip />
-      <DayHeader date={TODAY} showTodayTag />
+      <DayHeader date={today} showTodayTag />
 
-      {!onboarded ? (
-        <WelcomeNote />
-      ) : (
-        prompt && (
-          <PromptChip
-            category={prompt.category}
-            message={prompt.message}
-            onDismiss={dismiss}
-          />
-        )
+      {!onboarded && <WelcomeNote />}
+
+      {prompt && (
+        <PromptChip
+          category={prompt.category}
+          message={prompt.message}
+          onDismiss={dismiss}
+        />
       )}
 
       <CaptureEntry onTap={() => openCapture('photo')} />
@@ -117,6 +106,8 @@ export function TodayPage() {
           </div>
         </section>
       )}
+
+      {onboarded && <WeekRecapCard />}
 
       <CaptureSheet
         open={sheetOpen}

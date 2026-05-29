@@ -10,9 +10,10 @@ import { getCurrentUser } from './identity';
 import { useFragmentStore } from './fragmentStore';
 import type { Space, SpaceMember, Invite, User } from '../types/space';
 
-const SPACES_KEY = 'gyeol:spaces:v1';
-const INVITES_KEY = 'gyeol:invites:v1';
-const ACTIVE_KEY = 'gyeol:active-space:v1';
+// v2: 가상 공유 공간('민지 & 나')·가짜 Plus 시드를 제거하며 이전 캐시를 폐기.
+const SPACES_KEY = 'gyeol:spaces:v2';
+const INVITES_KEY = 'gyeol:invites:v2';
+const ACTIVE_KEY = 'gyeol:active-space:v2';
 
 function persistSpaces(spaces: Space[]): void {
   void idbSet(SPACES_KEY, spaces).catch((err) => console.warn('space persist failed', err));
@@ -59,6 +60,8 @@ interface SpaceStoreState {
   setActiveSpace: (id: string) => void;
   setViewSpace: (id: string) => void;
   createSpace: (name: string) => Space;
+  /** 백업 복원용 — 같은 id의 공간이 없을 때만 그대로 추가. 이미 있으면 기존 것을 보존. */
+  importSpace: (space: Space) => void;
   updateMemberDisplayName: (userId: string, name: string) => void;
   joinSpace: (spaceId: string, user: User) => void;
   generateInvite: (spaceId: string) => Invite;
@@ -116,6 +119,7 @@ export const useSpaceStore = create<SpaceStoreState>((set, get) => ({
           hydrated: true,
         });
       } else {
+        // 항상 개인 공간 하나로 시작 — 가상 공유 공간·플랜 없음.
         set({
           spaces: initialSpaces,
           invites: [],
@@ -165,6 +169,16 @@ export const useSpaceStore = create<SpaceStoreState>((set, get) => ({
       return { spaces };
     });
     return newSpace;
+  },
+
+  importSpace: (space) => {
+    if (!space || !space.id) return;
+    set((s) => {
+      if (s.spaces.some((sp) => sp.id === space.id)) return s;
+      const spaces = [...s.spaces, space];
+      persistSpaces(spaces);
+      return { spaces };
+    });
   },
 
   updateMemberDisplayName: (userId, name) => {

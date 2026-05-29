@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { CalendarCell } from '../../components/CalendarCell';
 import { YearAgoCard } from '../../components/YearAgoCard';
 import { SpaceChip } from '../../components/SpaceChip';
 import { useViewSpaceFragments } from '../../lib/useViewSpaceFragments';
 import { useSpaceStore } from '../../lib/spaceStore';
+import { getTodayDate, toDayKey } from '../../lib/today';
 
-const TODAY = new Date('2026-05-28T00:00:00');
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 function buildMonth(year: number, month: number): Date[] {
@@ -21,17 +21,12 @@ function buildMonth(year: number, month: number): Date[] {
   });
 }
 
-function toKey(d: Date): string {
-  const m = (d.getMonth() + 1).toString().padStart(2, '0');
-  const day = d.getDate().toString().padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
 export function CalendarPage() {
   const navigate = useNavigate();
   const fragments = useViewSpaceFragments();
   const spaces = useSpaceStore((s) => s.spaces);
-  const [cursor, setCursor] = useState(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1));
+  const today = useMemo(() => getTodayDate(), []);
+  const [cursor, setCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
 
   /** 각 dayKey 의 dot 색 — 그 날 가장 최근 결의 공간 색. 개인 공간이면 undefined → mint 기본값. */
   const dotByDay = useMemo(() => {
@@ -59,17 +54,26 @@ export function CalendarPage() {
     [cursor],
   );
 
-  const yearAgoKey = `${TODAY.getFullYear() - 1}-${(TODAY.getMonth() + 1).toString().padStart(2, '0')}-${TODAY.getDate().toString().padStart(2, '0')}`;
+  const yearAgoKey = toDayKey(new Date(today.getFullYear() - 1, today.getMonth(), today.getDate()));
   const yearAgo = fragments.find((f) => f.dayDate === yearAgoKey) ?? null;
-  const todayKey = toKey(TODAY);
+  const todayKey = toDayKey(today);
 
   const onTodaysMonth =
-    cursor.getFullYear() === TODAY.getFullYear() &&
-    cursor.getMonth() === TODAY.getMonth();
+    cursor.getFullYear() === today.getFullYear() &&
+    cursor.getMonth() === today.getMonth();
 
   return (
     <div className="stack-4">
-      <SpaceChip mode="view" />
+      <div className="cal-top">
+        <SpaceChip mode="view" />
+        <button
+          className="icon-btn"
+          aria-label="결 검색"
+          onClick={() => navigate('/search')}
+        >
+          <Search size={18} strokeWidth={1.75} />
+        </button>
+      </div>
 
       <header className="month-nav">
         <button
@@ -95,7 +99,7 @@ export function CalendarPage() {
         <div className="month-jump">
           <button
             className="month-jump__btn"
-            onClick={() => setCursor(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1))}
+            onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}
           >
             오늘로 가기
           </button>
@@ -110,7 +114,7 @@ export function CalendarPage() {
         </div>
         <div className="cal">
           {days.map((d) => {
-            const key = toKey(d);
+            const key = toDayKey(d);
             return (
               <CalendarCell
                 key={d.toISOString()}
@@ -119,14 +123,24 @@ export function CalendarPage() {
                 dotColor={dotByDay.get(key)?.color}
                 isToday={key === todayKey}
                 isOutsideMonth={d.getMonth() !== cursor.getMonth()}
-                onSelect={(date) => navigate(`/days/${toKey(date)}`)}
+                onSelect={(date) => navigate(`/days/${toDayKey(date)}`)}
               />
             );
           })}
         </div>
       </div>
 
-      {yearAgo && <YearAgoCard fragment={yearAgo} />}
+      {recordedDays.size === 0 ? (
+        <div className="empty">
+          아직 기록한 날이 없어요.
+          <br />
+          <button className="empty__link" onClick={() => navigate('/')}>
+            오늘 첫 결을 남겨보세요.
+          </button>
+        </div>
+      ) : (
+        yearAgo && <YearAgoCard fragment={yearAgo} />
+      )}
     </div>
   );
 }

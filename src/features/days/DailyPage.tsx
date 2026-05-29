@@ -1,19 +1,33 @@
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 import { DayHeader } from '../../components/DayHeader';
 import { FragmentItem } from '../../components/FragmentItem';
+import { CaptureEntry } from '../../components/CaptureEntry';
+import { MediaToggle } from '../../components/MediaToggle';
+import { CaptureSheet, type CaptureDraft } from '../../components/CaptureSheet';
 import { useFragmentStore } from '../../lib/fragmentStore';
+import { useSpaceStore } from '../../lib/spaceStore';
 import { useViewSpaceFragments } from '../../lib/useViewSpaceFragments';
-
-const TODAY_KEY = '2026-05-28';
+import { getCurrentUser } from '../../lib/identity';
+import { saveMedia } from '../../lib/mediaStore';
+import { getTodayDate, getTodayKey, nowIsoLocal, parseDayKey } from '../../lib/today';
+import type { Fragment, MediaType } from '../../types/fragment';
 
 export function DailyPage() {
   const { dayDate } = useParams<{ dayDate: string }>();
   const navigate = useNavigate();
   const fragments = useViewSpaceFragments();
   const pendingIds = useFragmentStore((s) => s.pendingIds);
+  const recentlyAddedId = useFragmentStore((s) => s.recentlyAddedId);
+  const addFragment = useFragmentStore((s) => s.add);
+  const activeSpaceId = useSpaceStore((s) => s.activeSpaceId);
+  const todayKey = useMemo(() => getTodayKey(), []);
 
-  const date = dayDate ? new Date(dayDate) : null;
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetType, setSheetType] = useState<MediaType>('photo');
+
+  const date = dayDate && /^\d{4}-\d{2}-\d{2}$/.test(dayDate) ? parseDayKey(dayDate) : null;
   const isValid = !!date && !Number.isNaN(date.getTime());
 
   if (!dayDate || !isValid || !date) {
@@ -31,9 +45,48 @@ export function DailyPage() {
     );
   }
 
+  // 미래 날짜에는 기록을 남길 수 없다. 오늘·과거는 백필 가능.
+  const isFuture = date.getTime() > getTodayDate().getTime();
+  const isToday = dayDate === todayKey;
+
   const dayFragments = fragments
     .filter((f) => f.dayDate === dayDate)
     .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+
+  const openCapture = (type: MediaType) => {
+    setSheetType(type);
+    setSheetOpen(true);
+  };
+
+  const handleSave = async (draft: CaptureDraft) => {
+    const me = getCurrentUser();
+    const fragmentId = `local-${Date.now()}`;
+    let thumbUrl = draft.previewUrl;
+    let hasLocalMedia = false;
+
+    if (draft.mediaBlob) {
+      thumbUrl = await saveMedia(fragmentId, draft.mediaBlob);
+      hasLocalMedia = true;
+    }
+
+    // 오늘은 실제 시각, 과거 백필은 정오 앵커(정렬용) + '시간 미상' 표기.
+    const capturedAt = isToday ? nowIsoLocal() : `${dayDate}T12:00:00`;
+
+    const next: Fragment = {
+      id: fragmentId,
+      type: draft.type,
+      title: draft.title,
+      capturedAt,
+      dayDate,
+      thumbUrl,
+      hasLocalMedia: hasLocalMedia || undefined,
+      backfilled: isToday ? undefined : true,
+      spaceId: activeSpaceId,
+      authorId: me.id,
+    };
+    addFragment(next);
+    setSheetOpen(false);
+  };
 
   return (
     <div className="stack-4">
@@ -45,7 +98,17 @@ export function DailyPage() {
         <span aria-hidden style={{ width: 32 }} />
       </header>
 
-      <DayHeader date={date} showTodayTag={dayDate === TODAY_KEY} />
+      <DayHeader date={date} showTodayTag={isToday} />
+
+      {!isFuture && (
+        <>
+          <CaptureEntry
+            onTap={() => openCapture('photo')}
+            label={isToday ? '오늘, 무엇이든 한 결 남겨요' : '이 날에, 무엇이든 한 결 남겨요'}
+          />
+          <MediaToggle onSelect={openCapture} />
+        </>
+      )}
 
       {dayFragments.length > 0 ? (
         <section>
@@ -58,13 +121,27 @@ export function DailyPage() {
                 key={f.id}
                 fragment={f}
                 pending={pendingIds.has(f.id)}
+                appear={f.id === recentlyAddedId}
                 onOpen={(id) => navigate(`/fragments/${id}`)}
               />
             ))}
           </div>
         </section>
       ) : (
-        <div className="empty">이 날엔 아직 결이 없어요.</div>
+        <div className="empty">
+          {isFuture
+            ? '아직 오지 않은 날이에요.'
+            : '이 날은 비어 있어요. 기억나는 게 있다면 지금 더해도 돼요.'}
+        </div>
+      )}
+
+      {!isFuture && (
+        <CaptureSheet
+          open={sheetOpen}
+          initialType={sheetType}
+          onClose={() => setSheetOpen(false)}
+          onSave={handleSave}
+        />
       )}
     </div>
   );

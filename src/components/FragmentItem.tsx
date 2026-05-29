@@ -82,7 +82,7 @@ export function FragmentItem({ fragment, pending = false, appear = false, onOpen
       <div className="fragment__body">
         <span className="fragment__title">{fragment.title}</span>
         <span className="fragment__meta">
-          {formatTime(fragment.capturedAt)}
+          {fragment.backfilled ? '시간 미상' : formatTime(fragment.capturedAt)}
           {showAuthor && authorName && <span className="fragment__author"> · {authorName}</span>}
           {pending && <span className="fragment__pending"> · 저장 중</span>}
         </span>

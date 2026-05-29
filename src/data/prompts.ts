@@ -65,10 +65,19 @@ export const PROMPTS: DailyPrompt[] = [
 ];
 
 /**
- * PROMPTS에서 매번 무작위로 하나를 뽑는다.
- * 캐시 없음 — 같은 페이지 안에서 useMemo로 마운트 동안만 안정적,
- * 새로고침/재진입할 때마다 새로운 prompt가 노출된다.
+ * 날짜 키('YYYY-MM-DD')로 결정적으로 하나를 고른다.
+ * 같은 날은 항상 같은 prompt — 재진입·새로고침해도 바뀌지 않는다.
+ * (하루 한 결의 차분함을 위해 매 마운트 셔플하지 않는다.)
  */
+export function pickPromptForDay(dayKey: string): DailyPrompt {
+  let hash = 0;
+  for (let i = 0; i < dayKey.length; i += 1) {
+    hash = (hash * 31 + dayKey.charCodeAt(i)) | 0;
+  }
+  return PROMPTS[Math.abs(hash) % PROMPTS.length];
+}
+
+/** 매번 무작위로 하나 — 온보딩(welcome) 화면처럼 매 진입마다 새 prompt를 보여줄 때. */
 export function pickRandomPrompt(): DailyPrompt {
   return PROMPTS[Math.floor(Math.random() * PROMPTS.length)];
 }

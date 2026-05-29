@@ -33,6 +33,17 @@ export async function loadMediaUrl(id: string): Promise<string | null> {
   }
 }
 
+/** 백업 등 원본 데이터가 필요할 때 — URL이 아닌 원본 Blob을 그대로 돌려준다. */
+export async function loadMediaBlob(id: string): Promise<Blob | null> {
+  try {
+    const blob = await idbGet<Blob>(PREFIX + id);
+    return blob ?? null;
+  } catch (err) {
+    console.warn('mediaStore.loadMediaBlob failed', err);
+    return null;
+  }
+}
+
 export async function removeMedia(id: string): Promise<void> {
   const cached = urlCache.get(id);
   if (cached) {

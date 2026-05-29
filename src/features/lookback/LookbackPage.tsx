@@ -1,19 +1,18 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Camera, Video, Mic, Quote, PenLine, type LucideIcon } from 'lucide-react';
-import { Button } from '../../components/Button';
+import { Camera, Video, Mic, Quote, PenLine, type LucideIcon } from 'lucide-react';
 import { Segmented } from '../../components/Segmented';
 import { LookbackRow } from '../../components/LookbackRow';
 import { SpaceChip } from '../../components/SpaceChip';
 import { useViewSpaceFragments } from '../../lib/useViewSpaceFragments';
 import { useSpaceStore } from '../../lib/spaceStore';
 import { spaceTagFor, type SpaceTag } from '../../lib/useSpaceColor';
+import { getTodayDate, parseDayKey } from '../../lib/today';
 import type { Fragment, MediaType } from '../../types/fragment';
 import type { Space } from '../../types/space';
 
 type Range = 'week' | 'month' | 'year';
 
-const TODAY = new Date('2026-05-28T00:00:00');
 const ICON = { photo: Camera, video: Video, text: Quote, voice: Mic } as const;
 const MONTH_LABEL = [
   '1월', '2월', '3월', '4월', '5월', '6월',
@@ -87,13 +86,13 @@ export function LookbackPage() {
 }
 
 function WeekView({ fragments, spaces }: { fragments: Fragment[]; spaces: Space[] }) {
-  const weekStart = useMemo(() => startOfWeek(TODAY), []);
+  const weekStart = useMemo(() => startOfWeek(getTodayDate()), []);
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
 
   const inRange = useMemo(
     () =>
       fragments.filter((f) => {
-        const d = new Date(f.dayDate);
+        const d = parseDayKey(f.dayDate);
         return d >= weekStart && d <= weekEnd;
       }),
     [fragments, weekStart, weekEnd],
@@ -108,7 +107,7 @@ function WeekView({ fragments, spaces }: { fragments: Fragment[]; spaces: Space[
     }
     return Array.from(m.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([dayDate, items]) => ({ date: new Date(dayDate), fragments: items }));
+      .map(([dayDate, items]) => ({ date: parseDayKey(dayDate), fragments: items }));
   }, [inRange]);
 
   if (inRange.length === 0) {
@@ -116,7 +115,7 @@ function WeekView({ fragments, spaces }: { fragments: Fragment[]; spaces: Space[
   }
 
   return (
-    <div className="stack-4">
+    <div className="stack-5">
       <header>
         <div className="lookback-period">지난 한 주 · {formatRange(weekStart, weekEnd)}</div>
         <p className="lookback-summary" style={{ marginTop: '4px' }}>
@@ -134,14 +133,6 @@ function WeekView({ fragments, spaces }: { fragments: Fragment[]; spaces: Space[
           />
         ))}
       </div>
-
-      <Button
-        variant="primary"
-        className="btn--block"
-        leadingIcon={<Play size={17} strokeWidth={1.75} />}
-      >
-        이번 주 영상으로 보기
-      </Button>
     </div>
   );
 }
@@ -156,14 +147,15 @@ function MonthView({
   onPickDay: (dayDate: string) => void;
 }) {
   void onPickDay;
-  const monthStart = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1);
-  const monthEnd = new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 0);
+  const today = useMemo(() => getTodayDate(), []);
+  const monthStart = useMemo(() => new Date(today.getFullYear(), today.getMonth(), 1), [today]);
+  const monthEnd = useMemo(() => new Date(today.getFullYear(), today.getMonth() + 1, 0), [today]);
 
   const inRange = useMemo(
     () =>
       fragments
         .filter((f) => {
-          const d = new Date(f.dayDate);
+          const d = parseDayKey(f.dayDate);
           return d >= monthStart && d <= monthEnd;
         })
         .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt)),
@@ -177,7 +169,7 @@ function MonthView({
   const weeks = useMemo(() => {
     const m = new Map<string, Fragment[]>();
     for (const f of inRange) {
-      const d = new Date(f.dayDate);
+      const d = parseDayKey(f.dayDate);
       const ws = startOfWeek(d);
       const key = ws.toISOString().slice(0, 10);
       const arr = m.get(key) ?? [];
@@ -187,7 +179,7 @@ function MonthView({
     return Array.from(m.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, items]) => {
-        const ws = new Date(key);
+        const ws = parseDayKey(key);
         const we = addDays(ws, 6);
         return { start: ws, end: we, fragments: items };
       });
@@ -201,7 +193,7 @@ function MonthView({
     <div className="stack-5">
       <header>
         <div className="lookback-period">
-          {TODAY.getFullYear()}년 {TODAY.getMonth() + 1}월
+          {today.getFullYear()}년 {today.getMonth() + 1}월
         </div>
         <p className="lookback-summary" style={{ marginTop: '4px' }}>
           {inRange.length}개의 순간을 남겼어요
@@ -250,12 +242,12 @@ function YearView({
   spaces: Space[];
   onPickMonth: (dayDate: string) => void;
 }) {
-  const year = TODAY.getFullYear();
+  const year = useMemo(() => getTodayDate().getFullYear(), []);
 
   const yearFragments = useMemo(
     () =>
       fragments
-        .filter((f) => new Date(f.dayDate).getFullYear() === year)
+        .filter((f) => parseDayKey(f.dayDate).getFullYear() === year)
         .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt)),
     [fragments, year],
   );
@@ -265,7 +257,7 @@ function YearView({
 
   const months = useMemo(() => {
     const buckets: Fragment[][] = Array.from({ length: 12 }, () => []);
-    for (const f of yearFragments) buckets[new Date(f.dayDate).getMonth()].push(f);
+    for (const f of yearFragments) buckets[parseDayKey(f.dayDate).getMonth()].push(f);
     return buckets.map((items, i) => ({
       month: i,
       fragments: items,
@@ -338,7 +330,7 @@ function LookbackHero({
   const Icon = ICON[fragment.type];
   const hasMedia =
     !!fragment.thumbUrl && (fragment.type === 'photo' || fragment.type === 'video');
-  const d = new Date(fragment.dayDate);
+  const d = parseDayKey(fragment.dayDate);
   const dateLabel = `${d.getMonth() + 1}월 ${d.getDate()}일`;
 
   return (
