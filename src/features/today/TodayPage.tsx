@@ -29,8 +29,8 @@ export function TodayPage() {
   const activeSpaceId = useSpaceStore((s) => s.activeSpaceId);
 
   const { onboarded, markOnboarded } = useOnboarding();
-  // 온보딩(welcome) 중엔 매 진입마다 무작위, 그 뒤엔 하루 고정.
-  const { prompt, dismiss } = useDailyPrompt(todayKey, { random: !onboarded });
+  // 프롬프트는 항상 진입(새로고침)마다 무작위. dismiss하면 그날은 안 뜸.
+  const { prompt, dismiss } = useDailyPrompt(todayKey, { random: true });
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetType, setSheetType] = useState<MediaType>('photo');
